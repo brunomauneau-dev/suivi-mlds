@@ -25,12 +25,36 @@ function donneesDemo() {
     for (let k = 0; k < na; k++) Agents.push({ id: Agents.length + 1, Prenom: PRENOMS[(i * 3 + k) % PRENOMS.length], Nom: NOMS[(i + k) % NOMS.length].toUpperCase(), Departement: i + 1, Role_Grist: "Agent" });
   });
   Agents.push({ id: Agents.length + 1, Prenom: "Draio", Nom: "RÉGION", Departement: 0, Role_Grist: "Superviseur régional" });
-  const MOTIFS = [["ABS", "Absentéisme / assiduité", "Assiduité & décrochage", 30], ["RISQ", "Signaux faibles / risque de décrochage", "Assiduité & décrochage", 14],
-    ["DEC", "Décrochage avéré (sorti sans solution)", "Assiduité & décrochage", 12], ["ORIENT", "Orientation subie / sans affectation", "Orientation & parcours", 10],
-    ["SANTE", "Santé / santé mentale / phobie scolaire", "Handicap & santé", 8], ["COMP", "Troubles du comportement / conduites à risque", "Comportement", 7],
-    ["FAM", "Difficultés familiales / sociales", "Social & familial", 5], ["HAND", "Situation de handicap (PPS / MDPH)", "Handicap & santé", 4],
-    ["HARC", "Harcèlement (victime ou auteur)", "Climat scolaire", 3], ["ALLO", "Élève allophone / EANA / EFIV", "Orientation & parcours", 2]];
-  const Motifs = MOTIFS.map((m, i) => ({ id: i + 1, Code: m[0], Libelle: m[1], Famille: m[2] }));
+  const MOTIFS = [["P_MDPH", "MDPH (situation de handicap)", "Profil", 10, "Profil"], ["P_PSY", "Psychologique", "Profil", 18, "Profil"], ["P_MED", "Médical", "Profil", 10, "Profil"],
+    ["P_EDUC", "Éducatif", "Profil", 30, "Profil"], ["P_PJJ", "PJJ", "Profil", 4, "Profil"], ["P_ASE", "ASE", "Profil", 6, "Profil"], ["P_SOC", "Social", "Profil", 22, "Profil"],
+    ["M_MOTIV", "Motivation scolaire", "Assiduité & motivation", 22, "Motif"], ["M_RUPT_CFA", "Rupture CFA", "Orientation & parcours", 6, "Motif"],
+    ["M_ABS", "Absentéisme", "Assiduité & motivation", 28, "Motif"], ["M_MAL_ETRE", "Mal-être", "Santé & bien-être", 8, "Motif"], ["M_LANGUE", "Langue", "Langue", 3, "Motif"],
+    ["M_ORIENT", "Orientation", "Orientation & parcours", 12, "Motif"], ["M_DIFF_SCOL", "Difficultés scolaires", "Apprentissages", 10, "Motif"],
+    ["M_RSA", "RSA", "Social", 1, "Motif"], ["M_PROJET", "Travail de projet", "Orientation & parcours", 4, "Motif"], ["M_ESTIME", "Estime de soi", "Santé & bien-être", 6, "Motif"]];
+  const Motifs = MOTIFS.map((m, i) => ({ id: i + 1, Code: m[0], Libelle: m[1], Famille: m[2], Nature: m[4] }));
+  const idsMotifs = MOTIFS.map((m, i) => [i + 1, m]).filter(x => x[1][4] === "Motif"), idsProfils = MOTIFS.map((m, i) => [i + 1, m]).filter(x => x[1][4] === "Profil");
+  const CLASSES = [["6e-5e", "Autres 1er cycle", 2], ["4e Générale", "Autres 1er cycle", 6], ["3e Générale", "3ème générale", 18], ["4e et 3e SEGPA", "4ème et 3ème SEGPA", 5],
+    ["3e PREPA METIER", "3ème prépa métiers", 4], ["1re année CAP", "1ère CAP", 10], ["Terminale CAP", "Terminales CAP", 4], ["2nde professionnelle", "2nde PRO", 18],
+    ["1re professionnelle", "1ère PRO", 8], ["Terminale professionnelle", "Terminale PRO", 3], ["Apprentissage niveau III (CAP)", "Apprentissage niveau 3 (CAP)", 5],
+    ["2nde GT", "2nde GT", 10], ["1re GT", "1ère GT", 4], ["Autres LP", "PAPS / Autres", 2]];
+  const Classes_origine = CLASSES.map((c, i) => ({ id: i + 1, Classe: c[0], Ligne_synthese: c[1] }));
+  const DISP = [["PREV_ENT", "Entretiens de prévention", "Prévention", "", "Entretiens de prévention"], ["GPDS", "Suivi GPDS", "Prévention", "", "Suivis GPDS"],
+    ["INFO_SAS", "Action d'information et sensibilisation (SAS)", "Information et sensibilisation", "1 - Actions information et sensibilisation", ""],
+    ["PAPS_TP", "PAPS temps plein", "Remobilisation", "2 - Actions remobilisation et remise à niveau", "PAPS temps plein"],
+    ["PAFI_POLES", "Parcours modulaire – PAFI (pôles)", "Remobilisation", "2 - Actions remobilisation et remise à niveau", "Parcours modulaires - PAFI (pôles)"],
+    ["PAFI_COORD", "PAFI suivi par la coordination", "Remobilisation", "2 - Actions remobilisation et remise à niveau", "PAFI suivis par la coordination"],
+    ["REMOB", "Action de remobilisation et remise à niveau", "Remobilisation", "2 - Actions remobilisation et remise à niveau", ""],
+    ["MICRO", "Micro-lycée – remobilisation premières", "Retour à l'école", "2 - Micro-lycée remobilisation premières", ""],
+    ["CAND_PAPS", "Candidature PAPS", "Candidature", "", "Candidatures PAPS"], ["FSE", "Action FSE", "Remobilisation", "", "Actions FSE"]];
+  const Dispositifs = DISP.map((d, i) => ({ id: i + 1, Code: d[0], Libelle: d[1], Famille: d[2], Rapport: d[3], Ligne_synthese: d[4] }));
+  const disp = Object.fromEntries(DISP.map((d, i) => [d[0], i + 1]));
+  const ME = [["Démission / rupture en cours d'année", "Démission en cours/fin d'année", "rupture en cours d'année"], ["Non affecté (Affelnet)", "Non affecté", "non affecté par Affelnet"],
+    ["Refus d'affectation", "Refus d'affectation", "affectation refusée"], ["Rupture de contrat d'apprentissage", "Rupture de contrat d'alternance", "rupture apprentissage"],
+    ["Vœu de recensement en fin d'année", "Vœu de recensement en fin d'année", "non affecté par Affelnet"], ["Exclusion (conseil de discipline)", "Exclusion (conseil de discipline)", "rupture en cours d'année"],
+    ["Suite GPDS / Foquale", "Suite GPDS / Foquale", "rupture en cours d'année"], ["Autre motif", "Autre motif ", "non scolarisé(e) "]];
+  const Motifs_entree = ME.map((m, i) => ({ id: i + 1, Motif: m[0], Ligne_synthese: m[1], Motif_inscription: m[2] }));
+  const Parcours = [];
+  const DEV = DEVENIRS.map(d => d[0]);
   const TYPES = [["ACC_POS", "Entretien de positionnement / analyse de situation", "Accompagnement personnalisé", "Suivi individuel", 1],
     ["ACC_ENT", "Entretien de suivi / bilan avec le jeune", "Accompagnement personnalisé", "Suivi individuel", 1],
     ["ACC_FAM", "Rencontre famille / éducateur / référent partenaire", "Accompagnement personnalisé", "Suivi individuel", 1],
@@ -56,16 +80,29 @@ function donneesDemo() {
     const intensite = d[0] === "23" ? .5 : d[0] === "86" ? .8 : 1;
     for (let n = d[0] === "23" ? 14 : ent(18, 26); n > 0; n--) {
       const entree = ouvre(DEBUT + ent(0, Math.floor((T - DEBUT) / J) - 3) * J);
-      const mp = pondere(MOTIFS.map((_, i) => i + 1), MOTIFS.map(m => m[3]));
-      const sec = [...new Set(Array.from({ length: choix([0, 0, 0, 0, 1, 1, 1, 2]) }, () => pondere(MOTIFS.map((_, i) => i + 1), MOTIFS.map(m => m[3]))))].filter(x => x !== mp);
+      const tm = () => pondere(idsMotifs.map(x => x[0]), idsMotifs.map(x => x[1][3])), tp = () => pondere(idsProfils.map(x => x[0]), idsProfils.map(x => x[1][3]));
+      const mp = tm();
+      const sec = [...new Set(Array.from({ length: choix([0, 0, 0, 1, 1, 2]) }, tm))].filter(x => x !== mp);
+      const prof = [...new Set(Array.from({ length: choix([0, 0, 0, 1, 1, 2]) }, tp))];
+      const classe = pondere(Classes_origine.map(c => c.id), CLASSES.map(c => c[2]));
       let sortie = null, sit = null;
       const age = (T - entree) / J;
-      if (age > 120 && rnd() < .8) { sortie = ouvre(entree + ent(60, Math.min(age - 1, 300)) * J); sit = pondere(["Retour en formation initiale", "Apprentissage", "Emploi", "Service civique", "Autre dispositif (E2C, Epide…)", "Déménagement", "Perdu de vue", "Autre"], [34, 22, 6, 6, 8, 6, 12, 6]); }
+      if (age > 120 && rnd() < .8) { sortie = ouvre(entree + ent(60, Math.min(age - 1, 300)) * J); sit = pondere(DEV, [30, 20, 4, 6, 6, 5, 8, 8, 6, 7]); }
       const etab = rnd() > .15 ? choix(etabs) : 0;
       const j = { id: Jeunes.length + 1, Identifiant: `J-${new Date(entree * 1000).getUTCFullYear()}-${String(Jeunes.length + 1).padStart(4, "0")}`, Nom: choix(NOMS).toUpperCase(), Prenom: choix(PRENOMS),
         Niveau: choix(["4e", "3e", "2nde pro", "1re pro", "2nde GT", "CAP 1", "Sans affectation"]), Etablissement: etab, Statut: choix(["Scolarisé - en risque", "Scolarisé - absentéiste", "En action MLDS"]),
-        Motif_principal: mp, Motifs_secondaires: sec.length ? ["L", ...sec] : null, Agent_referent: ag.id, Date_entree_suivi: entree, Date_sortie_suivi: sortie, Situation_sortie: sit };
+        Motif_principal: mp, Motifs_secondaires: sec.length ? ["L", ...sec] : null, Agent_referent: ag.id, Date_entree_suivi: entree, Date_sortie_suivi: sortie, Situation_sortie: sit,
+        Sexe: choix(["F", "M"]), Date_naissance: entree - (pondere([14, 15, 16, 17, 18], [8, 22, 34, 26, 10]) * 365.25 + ent(0, 360)) * J,
+        Classe_origine: classe, Type_etab_origine: classe <= 5 ? choix(["CLG", "CLG", "SEGPA"]) : classe <= 11 ? choix(["LP", "LP", "LPO", "CFA"]) : choix(["LGT", "LPO"]),
+        Diplome: pondere(["aucun", "CFG", "DNB", "CAP"], [55, 10, 30, 5]), Profils: prof.length ? ["L", ...prof] : null };
       Jeunes.push(j);
+      const dsp = etab ? pondere(["PREV_ENT", "GPDS", "INFO_SAS"], [55, 30, 15]) : pondere(["PAPS_TP", "PAFI_POLES", "PAFI_COORD", "REMOB", "MICRO", "FSE"], [30, 20, 15, 20, 8, 7]);
+      if (!etab && rnd() < .25) Parcours.push({ id: Parcours.length + 1, Jeune: j.id, Dispositif: disp.CAND_PAPS, Etablissement: 0, Date_entree: entree, Date_sortie: entree, Motif_entree: ent(1, 5) });
+      const pe = ouvre(entree + ent(0, 20) * J), exam = ["REMOB", "MICRO", "PAPS_TP"].includes(dsp) && rnd() < .4 ? choix(["CAP", "DNB", "Bac Pro"]) : null;
+      Parcours.push({ id: Parcours.length + 1, Jeune: j.id, Dispositif: disp[dsp], Etablissement: etab || choix(etabs), Date_entree: pe,
+        Date_sortie: sortie && sortie >= pe ? sortie : null, Motif_entree: etab ? choix([6, 7, 8]) : ent(1, 5), Modalites: choix(["entretiens individuels", "tutorat, stage", "remise à niveau", "ateliers collectifs"]),
+        Examen_prepare: exam, Admis: exam && sortie ? choix(["O", "O", "N"]) : null, Devenir: sortie && sortie >= pe ? sit : null,
+        Classe_reprise: sit && /statut scolaire/.test(sit) ? choix(["2NDPRO", "1CAP2", "2GT"]) : null });
       if (rnd() < .03 && !sortie) continue;
       let x = ouvre(entree + ent(2, 18) * J);
       act(x, "ACC_POS", ag.id, { Jeune: j.id, Compte_rendu: "Analyse de la situation, souhaits du jeune recueillis" });
@@ -90,7 +127,7 @@ function donneesDemo() {
       }
     }
   });
-  return { Academies, Departements, Bassins: [], Etablissements, Agents, Motifs, Types_activite,
+  return { Academies, Departements, Bassins: [], Etablissements, Agents, Motifs, Types_activite, Parcours, Dispositifs, Motifs_entree, Classes_origine,
     Seuils: [{ Sans_premiere_action_j: 15, Sans_action_j: 30, Cumul_motifs: 3, Jeunes_sans_GPDS: 10, Part_attention: .2, Baisse_activite: -.2, Agent_sans_saisie_j: 15 }],
     Jeunes, Activites };
 }

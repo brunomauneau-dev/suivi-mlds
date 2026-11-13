@@ -6,8 +6,9 @@
 <title>Suivi MLDS Nouvelle-Aquitaine</title>
 <script src="https://docs.getgrist.com/grist-plugin-api.js" defer></script>
 <script src="lib/xlsx.full.min.js" defer></script>
-<script src="demo.js?v=1" defer></script>
-<script src="app.js?v=1" defer></script>
+<script src="demo.js?v=2" defer></script>
+<script src="rapports.js?v=1" defer></script>
+<script src="app.js?v=2" defer></script>
 <style>
   :root {
     --bg: #f6f6f6; --card: #ffffff; --text: #1e1e1e; --muted: #666; --line: #e5e5e5;
@@ -155,6 +156,13 @@
   .modal .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
   .msg { font-size: 13px; color: var(--red); margin-top: 8px; }
   .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: #fff; padding: 9px 16px; border-radius: 8px; font-size: 13px; z-index: 30; }
+  .tag.prof { background: #efe7fb; color: #6a3fa0; }
+  .tbl.rap td, .tbl.rap th { white-space: nowrap; }
+  .tbl.rap th { white-space: normal; min-width: 70px; vertical-align: bottom; }
+  .tbl.rap tr.tot td { font-weight: 700; background: var(--grey-bg); }
+  .tbl.rap th.grp { text-align: center; border-bottom: 2px solid var(--blue); color: var(--blue); }
+  .zero { color: var(--grey); }
+  .btn-lien { background: none; border: 0; padding: 0; color: var(--blue); cursor: pointer; font: inherit; font-size: 12px; text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -172,6 +180,7 @@
     <button class="tab on" data-v="pilotage">Pilotage</button>
     <button class="tab" data-v="jeunes">Jeunes suivis</button>
     <button class="tab" data-v="agenda">Agenda</button>
+    <button class="tab" data-v="rapports">Rapports</button>
   </nav>
 </header>
 <div id="bandeau"></div>

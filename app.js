@@ -13,14 +13,15 @@ let SEMAINE = lundi(aujourdhui()), AGENT_CAL = "";
 const AXE_COUL = { "Suivi individuel": "var(--suivi)", "Pédagogie": "var(--peda)", "Ingénierie technique": "var(--inge)",
   "Formation dispensée": "var(--form)", "Formation suivie": "var(--autre)", "Gestion": "var(--autre)" };
 const AXES = Object.keys(AXE_COUL);
-const SORTIES_POS = ["Retour en formation initiale", "Apprentissage", "Emploi", "Service civique", "Autre dispositif (E2C, Epide…)"];
-const SORTIES = [...SORTIES_POS, "Déménagement", "Perdu de vue", "Autre"];
+const SORTIES_POS = DEVENIRS.filter(d => d[1] === "Positive").map(d => d[0]);
+const SORTIES = DEVENIRS.map(d => d[0]);
+const ABANDON = "Abandon en cours d'action, injoignables";
 const PARTENAIRES = ["Mission locale", "E2C", "Epide", "CFA", "Greta", "Collectivité", "Services sociaux", "PJJ", "CIO", "Entreprise", "Association", "Autre"];
 const NIVEAUX = ["EPLE", "District / bassin", "Départemental", "Académique", "Régional"];
 const STATUTS = ["Scolarisé - en risque", "Scolarisé - absentéiste", "Sorti sans solution", "Sans affectation", "En action MLDS", "Autre"];
 const ALERTE_LIB = {
   aucune: ["Aucune action depuis l'entrée", "ko"], silence: ["Sans action récente", "warn"],
-  cumul: ["Cumul de difficultés", "warn"], perdu: ["Perdu de vue", "ko"] };
+  cumul: ["Cumul de difficultés", "warn"], perdu: ["Abandon / injoignable", "ko"] };
 
 /* ---------- dates (Grist : secondes depuis 1970, minuit UTC) ---------- */
 function aujourdhui() { const d = new Date(); return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 1000; }
@@ -54,7 +55,8 @@ function lignes(t) {
 function toast(m) { const e = document.createElement("div"); e.className = "toast"; e.textContent = m; document.body.appendChild(e); setTimeout(() => e.remove(), 2600); }
 
 /* ---------- chargement ---------- */
-const TABLES = ["Academies", "Departements", "Bassins", "Etablissements", "Agents", "Motifs", "Types_activite", "Seuils", "Jeunes", "Activites"];
+const TABLES = ["Academies", "Departements", "Bassins", "Etablissements", "Agents", "Motifs", "Types_activite", "Seuils", "Jeunes", "Activites",
+  "Parcours", "Dispositifs", "Motifs_entree", "Classes_origine"];
 
 async function charger() {
   try {
@@ -88,7 +90,7 @@ function preparer(b) {
     j.acaId = depAca(j.depId);
     j.motif = d.motifs.get(j.Motif_principal) || null;
     j.secondaires = liste(j.Motifs_secondaires).map(m => d.motifs.get(m)).filter(Boolean);
-    j.nbMotifs = (j.motif ? 1 : 0) + j.secondaires.length;
+    j.nbMotifs = (j.motif ? 1 : 0) + j.secondaires.length + liste(j.Profils).length;
     j.actions = [];
     parJeune.set(j.id, j);
   });
@@ -113,11 +115,12 @@ function preparer(b) {
     if (j.enCours && !j.actions.length && j.Date_entree_suivi && jours(t, j.Date_entree_suivi) > s.Sans_premiere_action_j) j.alertes.push("aucune");
     else if (j.sansAction != null && j.sansAction > s.Sans_action_j) j.alertes.push("silence");
     if (j.nbMotifs >= s.Cumul_motifs) j.alertes.push("cumul");
-    if (j.Situation_sortie === "Perdu de vue") j.alertes.push("perdu");
+    if (j.Situation_sortie === ABANDON) j.alertes.push("perdu");
   });
   // agents : dernière saisie
   d.agents.forEach(a => { a.derniere = null; });
   d.acts.forEach(a => { const ag = d.agents.get(a.Agent); if (ag && a.Date && (!ag.derniere || a.Date > ag.derniere)) ag.derniere = a.Date; });
+  preparerParcours(d, b);
   D = d;
 }
 
@@ -170,6 +173,7 @@ function rendre() {
   const v = document.getElementById("vue");
   if (VUE === "pilotage") v.innerHTML = vuePilotage(lib);
   else if (VUE === "jeunes") v.innerHTML = vueJeunes();
+  else if (VUE === "rapports") v.innerHTML = vueRapports();
   else v.innerHTML = vueAgenda();
 }
 
@@ -222,7 +226,7 @@ function vuePilotage(lib) {
   const al = [
     ["aucune", cpt("aucune"), "jeunes sans aucune action depuis leur entrée", `entrés depuis plus de ${s.Sans_premiere_action_j} jours`, "ko"],
     ["silence", cpt("silence"), "jeunes sans action récente", `plus de ${s.Sans_action_j} jours sans action`, "warn"],
-    ["perdu", cpt("perdu"), "jeunes perdus de vue", "à la sortie du suivi", "ko"],
+    ["perdu", cpt("perdu"), "abandons ou jeunes injoignables", "à la sortie du suivi", "ko"],
     ["cumul", cpt("cumul"), "jeunes cumulant plusieurs difficultés", `${s.Cumul_motifs} motifs ou plus`, "warn"],
   ].filter(x => x[1]);
   const alertes = `<div class="card"><h2>Points d'attention</h2>${al.length || agentsMuets.length ? `<ul class="alerts">
@@ -363,6 +367,9 @@ function ficheJeune(j) {
     <div class="fiche">
       <div><dl class="f">
         <dt>Statut</dt><dd>${esc(j.Statut || "–")}</dd>
+        <dt>Âge</dt><dd>${j.age == null ? "–" : j.age + " ans"} · ${esc(j.Sexe || "")}</dd>
+        <dt>Origine</dt><dd>${esc([j.Type_etab_origine, (j.classe || {}).Classe].filter(Boolean).join(" · ") || "–")}</dd>
+        <dt>Profils</dt><dd>${(j.profils || []).map(m => `<span class="tag prof">${esc(m.Libelle)}</span>`).join("") || "–"}</dd>
         <dt>Référent</dt><dd>${esc(`${ag.Prenom || ""} ${ag.Nom || ""}`.trim() || "–")}</dd>
         <dt>Entrée</dt><dd>${fmt(j.Date_entree_suivi)}</dd>
         <dt>1re action</dt><dd>${j.delai == null ? "–" : `${fmt(j.premier)} (${j.delai} j)`}</dd>
@@ -371,7 +378,7 @@ function ficheJeune(j) {
         ${j.INE ? `<dt>INE</dt><dd>${esc(j.INE)}</dd>` : ""}
       </dl>
       <div class="btns"><button class="btn" data-ajout-jeune="${j.id}">+ Action pour ce jeune</button>
-        ${j.enCours ? `<button class="btn sec" data-clore="${j.id}">Clore le suivi</button>` : ""}</div></div>
+        ${j.enCours ? `<button class="btn sec" data-clore="${j.id}">Clore le suivi</button>` : ""}</div>${blocParcours(j)}</div>
       <div><ul class="tl">${j.actions.slice(0, 10).map(a => `<li><span class="d">${fmt(a.Date)}</span><span class="p" style="background:${AXE_COUL[a.axe] || "var(--autre)"}"></span>
         <span><b>${esc(a.type.Libelle || "Action")}</b>${a.Duree_h ? ` · ${dec(a.Duree_h)} h` : ""}${a.Compte_rendu || a.Intitule ? `<small>${esc(a.Compte_rendu || a.Intitule)}</small>` : ""}${a.Suite_a_donner ? `<small>Suite : ${esc(a.Suite_a_donner)}</small>` : ""}</span></li>`).join("")
         || `<li><span class="d"></span><span></span><span class="koc">Aucune action enregistrée.</span></li>`}
@@ -483,17 +490,20 @@ function ouvrirAction(pre = {}) {
 }
 
 function ouvrirJeune() {
-  const motifs = [...D.motifs.values()];
+  const motifs = [...D.motifs.values()].filter(m => m.Nature !== "Profil"), profils = [...D.motifs.values()].filter(m => m.Nature === "Profil");
   const n = D.jeunes.length + 1, y = new Date().getFullYear();
   const bg = modal(`<h3>Nouveau jeune suivi</h3><form class="fm" id="fj">
     <label>Nom<input name="nom" required></label><label>Prénom<input name="prenom"></label>
-    <label>INE<input name="ine"></label><label>Année de naissance<input type="number" name="naiss" min="1995" max="2020"></label>
-    <label>Sexe<select name="sexe"><option></option><option>F</option><option>M</option><option>Autre</option></select></label>
-    <label>Niveau<input name="niveau" placeholder="ex. 3e, 2nde pro, sans affectation"></label>
+    <label>INE<input name="ine"></label><label>Date de naissance<input type="date" name="naiss"></label>
+    <label>Sexe<select name="sexe"><option>F</option><option>M</option></select></label>
+    <label>Diplôme possédé<select name="dipl">${["aucun", "CFG", "DNB", "CAP", "BEP", "BAC Pro", "BAC Gén.", "BAC Techno"].map(x => `<option>${x}</option>`).join("")}</select></label>
+    <label>Type d'établissement d'origine<select name="torig">${["CLG", "SEGPA", "LP", "LPO", "LGT", "CFA", "MFR", "EREA", "IME", "IMPRO", "ET SPE", "AUT"].map(x => `<option>${x}</option>`).join("")}</select></label>
+    <label>Classe d'origine<select name="classe"><option value="">—</option>${[...D.classes.values()].map(c => `<option value="${c.id}">${esc(c.Classe)}</option>`).join("")}</select></label>
     <label class="full">Établissement<select name="etab"><option value="">— aucun (sorti du système scolaire) —</option>${[...D.etab.values()].sort((a, b) => (a.Nom || "").localeCompare(b.Nom || "")).map(e => `<option value="${e.id}">${esc(e.Nom)}</option>`).join("")}</select></label>
     <label>Statut<select name="statut">${STATUTS.map(s => `<option>${s}</option>`).join("")}</select></label>
     <label>Entrée en suivi<input type="date" name="entree" value="${isoDate(aujourdhui())}"></label>
     <label class="full">Motif principal<select name="motif" required><option value="">Choisir…</option>${motifs.map(m => `<option value="${m.id}">${esc(m.Libelle)} · ${esc(m.Famille || "")}</option>`).join("")}</select></label>
+    <div class="full"><span style="font-size:12px;color:var(--muted)">Profils</span><div class="checks">${profils.map(m => `<label><input type="checkbox" name="prof" value="${m.id}">${esc(m.Libelle)}</label>`).join("")}</div></div>
     <div class="full"><span style="font-size:12px;color:var(--muted)">Motifs secondaires</span><div class="checks">${motifs.map(m => `<label><input type="checkbox" name="sec" value="${m.id}">${esc(m.Libelle)}</label>`).join("")}</div></div>
     <label>Agent référent<select name="agent">${[...D.agents.values()].filter(a => a.Role_Grist === "Agent").map(a => `<option value="${a.id}" ${a.id === agentParDefaut() ? "selected" : ""}>${esc(`${a.Prenom} ${a.Nom}`)}</option>`).join("")}</select></label>
   </form><div class="msg" id="fj-msg"></div>
@@ -505,7 +515,9 @@ function ouvrirJeune() {
     if (!f.nom.value || !f.motif.value) { msg.textContent = "Indiquez au moins le nom et le motif principal."; return; }
     const sec = [...f.querySelectorAll("input[name=sec]:checked")].map(x => Number(x.value)).filter(x => x !== Number(f.motif.value));
     const rec = { Identifiant: `J-${y}-${String(n).padStart(4, "0")}`, Nom: f.nom.value, Prenom: f.prenom.value, INE: f.ine.value,
-      Annee_naissance: f.naiss.value ? Number(f.naiss.value) : null, Sexe: f.sexe.value, Niveau: f.niveau.value,
+      Date_naissance: f.naiss.value ? versDate(f.naiss.value) : null, Sexe: f.sexe.value, Diplome: f.dipl.value, Type_etab_origine: f.torig.value,
+      Classe_origine: Number(f.classe.value) || 0, Niveau: f.classe.value ? D.classes.get(Number(f.classe.value)).Classe : "",
+      Profils: (p => p.length ? ["L", ...p] : null)([...f.querySelectorAll("input[name=prof]:checked")].map(x => Number(x.value))),
       Etablissement: Number(f.etab.value) || 0, Statut: f.statut.value, Motif_principal: Number(f.motif.value),
       Motifs_secondaires: sec.length ? ["L", ...sec] : null, Agent_referent: Number(f.agent.value) || 0, Date_entree_suivi: versDate(f.entree.value) };
     try { await ecrire([["AddRecord", "Jeunes", null, rec]], () => { D.jeunes.push({ id: Date.now(), ...rec }); }); bg.remove(); toast("Jeune ajouté au suivi"); }
@@ -536,7 +548,8 @@ async function ecrire(actions, enDemo) {
 function preparerDepuisD() {
   preparer({ Academies: [...D.aca.values()], Departements: [...D.dep.values()], Bassins: [], Etablissements: [...D.etab.values()],
     Agents: [...D.agents.values()], Motifs: [...D.motifs.values()], Types_activite: [...D.types.values()], Seuils: [D.seuils],
-    Jeunes: D.jeunes, Activites: D.acts });
+    Jeunes: D.jeunes, Activites: D.acts, Parcours: D.parcours, Dispositifs: [...D.dispositifs.values()],
+    Motifs_entree: [...D.motifsEntree.values()], Classes_origine: [...D.classes.values()] });
 }
 
 /* ---------- export Excel ---------- */
@@ -574,8 +587,12 @@ function brancher() {
   document.getElementById("export").onclick = () => D && exporter();
   const vue = document.getElementById("vue");
   vue.addEventListener("click", e => {
-    const el = e.target.closest("[data-go],[data-niv],[data-alerte],[data-jeune],[data-toggle-etab],[data-toggle-jeune],[data-ajout-jeune],[data-clore],[data-fj],[data-sem],[data-act],.day");
+    if (e.target.closest("#r-export")) { exporterRapport(); return; }
+    const el = e.target.closest("[data-rtype],[data-inscrire],[data-clore-parcours],[data-go],[data-niv],[data-alerte],[data-jeune],[data-toggle-etab],[data-toggle-jeune],[data-ajout-jeune],[data-clore],[data-fj],[data-sem],[data-act],.day");
     if (!el) return;
+    if (el.dataset.rtype) { R_TYPE = el.dataset.rtype; rendre(); return; }
+    if (el.dataset.inscrire) { ouvrirInscription(Number(el.dataset.inscrire)); return; }
+    if (el.dataset.cloreParcours) { ouvrirCloreParcours(el.dataset.cloreParcours); return; }
     if (el.dataset.go !== undefined) { CHEMIN = CHEMIN.slice(0, Number(el.dataset.go)); rendre(); }
     else if (el.dataset.niv) { CHEMIN.push({ niv: el.dataset.niv, id: Number(el.dataset.id) }); rendre(); window.scrollTo(0, 0); }
     else if (el.dataset.alerte) { FILTRE_J = "attention"; RECH = ""; VUE = "jeunes"; rendre(); }
@@ -596,6 +613,8 @@ function brancher() {
   vue.addEventListener("change", e => {
     if (e.target.id === "famille") { FAMILLE = e.target.value; rendre(); }
     if (e.target.id === "agent-cal") { AGENT_CAL = e.target.value; rendre(); }
+    const r = { "r-annee": v => R_ANNEE = Number(v), "r-trim": v => R_TRIM = v, "r-terr": v => R_TERR = v, "r-action": v => { R_ACTION = v; R_ETAB = ""; }, "r-etab": v => R_ETAB = v }[e.target.id];
+    if (r) { r(e.target.value); rendre(); }
   });
 }
 function allerJeune(id) {

@@ -7,7 +7,11 @@ Trois onglets :
 - **Pilotage** : indicateurs de la région, puis par académie, département et établissement (on descend en cliquant),
   points d'attention, tendance mensuelle comparée à l'année précédente, nature des actions selon le référentiel CPIF (BO n° 29 du 21-7-2016) ;
 - **Jeunes suivis** : jeunes regroupés par établissement, recherche, filtres, fiche avec l'historique des actions, clôture du suivi ;
-- **Agenda** : semaine de l'agent, clic dans une journée pour saisir une action.
+- **Agenda** : semaine de l'agent, clic dans une journée pour saisir une action ;
+- **Rapports** : les tableaux officiels, générés à partir des parcours saisis, par année, trimestre et territoire, exportables en Excel :
+  - synthèse trimestrielle (tableaux 1 à 5 : actions, genre, âge à l'entrée, origine scolaire, motifs d'entrée) ;
+  - tableaux par action (1 - information et sensibilisation, 2 - remobilisation et remise à niveau, micro-lycée), listes Filles / Garçons et devenir par classe d'origine ;
+  - PRÉVENTION : suivis individuels, profils et motifs par établissement.
 
 Boutons « + Action », « + Jeune » (écriture dans Grist) et « ⤓ Excel » (indicateurs de tous les territoires + liste des jeunes).
 
@@ -25,5 +29,6 @@ Hors de Grist, la page s'affiche en mode démonstration (données fictives, `dem
 
 - `index.html` : page et styles ;
 - `app.js` : lecture des tables, calcul des indicateurs, vues, saisie ;
+- `rapports.js` : rapports officiels, parcours dans les dispositifs ;
 - `demo.js` : jeu de données fictives du mode démonstration ;
 - `lib/xlsx.full.min.js` : SheetJS (licence Apache 2.0) pour l'export Excel.
