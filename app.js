@@ -8,6 +8,24 @@ let VUE = "pilotage";
 let PERIODE = "annee";        // "annee" | "annee-1" | "12m"
 let CHEMIN = [];              // descente : [{niv:"aca",id}, {niv:"dep",id}, {niv:"etab",id}]
 let FILTRE_J = "en_cours", RECH = "", FAMILLE = "", OUVERTS = new Set(), JEUNE_OUVERT = null;
+let ORIGINE = null;           // écran d'où l'on vient quand on ouvre la fiche d'un jeune
+
+/* ---------- navigation : chaque écran est une étape de l'historique (bouton Retour du navigateur) ---------- */
+function etat() {
+  return { VUE, CHEMIN: CHEMIN.map(c => ({ ...c })), FILTRE_J, RECH, FAMILLE, JEUNE_OUVERT, ORIGINE,
+    R: typeof R_TYPE !== "undefined" ? { R_TYPE, R_ANNEE, R_TRIM, R_TERR, R_ACTION, R_ETAB } : null };
+}
+function appliquer(e) {
+  if (!e) return;
+  ({ VUE, FILTRE_J, RECH, FAMILLE, JEUNE_OUVERT, ORIGINE } = e); CHEMIN = (e.CHEMIN || []).map(c => ({ ...c }));
+  if (e.R) ({ R_TYPE, R_ANNEE, R_TRIM, R_TERR, R_ACTION, R_ETAB } = e.R);
+}
+function naviguer(changer) {
+  changer();
+  try { history.pushState(etat(), "", "#" + VUE); } catch (err) { /* historique indisponible */ }
+  rendre(); window.scrollTo(0, 0);
+}
+window.addEventListener("popstate", ev => { if (ev.state) { appliquer(ev.state); rendre(); } });
 let SEMAINE = lundi(aujourdhui()), AGENT_CAL = "";
 
 const AXE_COUL = { "Suivi individuel": "var(--suivi)", "Pédagogie": "var(--peda)", "Ingénierie technique": "var(--inge)",
@@ -187,7 +205,7 @@ function nomTerritoire(niv, id) {
 function vuePilotage(lib) {
   const cur = CHEMIN[CHEMIN.length - 1] || {};
   const I = indicateurs(cur.niv, cur.id), s = D.seuils;
-  const crumb = [`<button data-go="0">Région</button>`].concat(CHEMIN.map((c, i) =>
+  const crumb = [`<button data-go="0">Région académique</button>`].concat(CHEMIN.map((c, i) =>
     i === CHEMIN.length - 1 ? `<b>${esc(nomTerritoire(c.niv, c.id))}</b>` : `<button data-go="${i + 1}">${esc(nomTerritoire(c.niv, c.id))}</button>`));
   if (!CHEMIN.length) crumb[0] = `<b>Région académique Nouvelle-Aquitaine</b>`;
   const kpi = (v, l, cls = "", em = "") => `<div class="kpi ${cls}"><b>${v}</b><span>${l}</span>${em ? `<em>${em}</em>` : ""}</div>`;
@@ -234,7 +252,7 @@ function vuePilotage(lib) {
     ${agentsMuets.length ? `<li class="warn" title="${esc(agentsMuets.map(a => `${a.Prenom} ${a.Nom}`).join(", "))}"><b>${agentsMuets.length}</b><span>agent(s) sans saisie depuis ${s.Agent_sans_saisie_j} jours<small>les chiffres de leur secteur sont sous-estimés</small></span></li>` : ""}
     </ul>` : `<p class="vide">Aucun point d'attention.</p>`}</div>`;
   return `
-    <div class="crumb">${crumb.join('<span class="sep">›</span>')}<span class="sep">·</span><span style="color:var(--muted)">${esc(lib)}</span></div>
+    <div class="crumb">${CHEMIN.length ? `<button class="btn sec retour" data-go="${CHEMIN.length - 1}">← Remonter</button>` : ""}${crumb.join('<span class="sep">›</span>')}<span class="sep">·</span><span style="color:var(--muted)">${esc(lib)}</span></div>
     <div class="kpis">
       ${kpi(I.nbJeunes, "jeunes suivis", "", `${I.enCours} en cours`)}
       ${kpi(ent(I.nbActs), "actions menées", "", `${ent(I.heures)} h · ${evol}`)}
@@ -337,7 +355,10 @@ function vueJeunes() {
   const ordre = [...groupes.entries()].sort((a, b) => b[1].filter(j => j.alertes.length).length - a[1].filter(j => j.alertes.length).length || b[1].length - a[1].length);
   const chip = (k, l) => `<button class="chip ${FILTRE_J === k ? "on" : ""}" data-fj="${k}">${l}</button>`;
   const ouvrirTout = !!RECH.trim() || ordre.length <= 3;
-  return `<div class="bar">
+  const nomOrig = ORIGINE ? (ORIGINE.vue === "pilotage" ? "au pilotage" + (ORIGINE.chemin.length ? " · " + nomTerritoire(ORIGINE.chemin[ORIGINE.chemin.length - 1].niv, ORIGINE.chemin[ORIGINE.chemin.length - 1].id) : "") : ORIGINE.vue === "agenda" ? "à l'agenda" : "aux rapports") : "";
+  const retour = ORIGINE && ORIGINE.vue !== "jeunes" ? `<div class="crumb"><button class="btn sec retour" data-retour-origine>← Retour ${esc(nomOrig)}</button>${RECH ? `<button class="btn-lien" data-effacer>Voir tous les jeunes</button>` : ""}</div>` :
+    RECH ? `<div class="crumb"><button class="btn-lien" data-effacer>Effacer la recherche et voir tous les jeunes</button></div>` : "";
+  return `${retour}<div class="bar">
       <input type="search" id="q" placeholder="Rechercher un jeune, un INE, un établissement…" value="${esc(RECH)}">
       ${chip("en_cours", "En cours")}${chip("attention", "En point d'attention")}${chip("sortis", "Sortis")}${chip("tous", "Tous")}
       <select id="famille"><option value="">Toutes les familles de motif</option>${familles.map(f => `<option ${f === FAMILLE ? "selected" : ""}>${esc(f)}</option>`).join("")}</select>
@@ -581,27 +602,29 @@ function brancher() {
   const a = anneeScolaire(aujourdhui());
   per.innerHTML = `<option value="annee">Année ${a}-${a + 1}</option><option value="annee-1">Année ${a - 1}-${a}</option><option value="12m">12 derniers mois</option>`;
   per.onchange = () => { PERIODE = per.value; rendre(); };
-  document.getElementById("tabs").onclick = e => { const b = e.target.closest(".tab"); if (b) { VUE = b.dataset.v; rendre(); } };
+  document.getElementById("tabs").onclick = e => { const b = e.target.closest(".tab"); if (b && b.dataset.v !== VUE) naviguer(() => { VUE = b.dataset.v; if (VUE !== "jeunes") ORIGINE = null; }); };
   document.getElementById("nouvelle-action").onclick = () => D && ouvrirAction();
   document.getElementById("nouveau-jeune").onclick = () => D && ouvrirJeune();
   document.getElementById("export").onclick = () => D && exporter();
   const vue = document.getElementById("vue");
   vue.addEventListener("click", e => {
     if (e.target.closest("#r-export")) { exporterRapport(); return; }
-    const el = e.target.closest("[data-rtype],[data-inscrire],[data-clore-parcours],[data-go],[data-niv],[data-alerte],[data-jeune],[data-toggle-etab],[data-toggle-jeune],[data-ajout-jeune],[data-clore],[data-fj],[data-sem],[data-act],.day");
+    const el = e.target.closest("[data-retour-origine],[data-effacer],[data-rtype],[data-inscrire],[data-clore-parcours],[data-go],[data-niv],[data-alerte],[data-jeune],[data-toggle-etab],[data-toggle-jeune],[data-ajout-jeune],[data-clore],[data-fj],[data-sem],[data-act],.day");
     if (!el) return;
-    if (el.dataset.rtype) { R_TYPE = el.dataset.rtype; rendre(); return; }
+    if (el.dataset.rtype) { naviguer(() => { R_TYPE = el.dataset.rtype; }); return; }
     if (el.dataset.inscrire) { ouvrirInscription(Number(el.dataset.inscrire)); return; }
     if (el.dataset.cloreParcours) { ouvrirCloreParcours(el.dataset.cloreParcours); return; }
-    if (el.dataset.go !== undefined) { CHEMIN = CHEMIN.slice(0, Number(el.dataset.go)); rendre(); }
-    else if (el.dataset.niv) { CHEMIN.push({ niv: el.dataset.niv, id: Number(el.dataset.id) }); rendre(); window.scrollTo(0, 0); }
-    else if (el.dataset.alerte) { FILTRE_J = "attention"; RECH = ""; VUE = "jeunes"; rendre(); }
+    if (el.dataset.go !== undefined) { naviguer(() => { CHEMIN = CHEMIN.slice(0, Number(el.dataset.go)); }); }
+    else if (el.dataset.niv) { naviguer(() => { CHEMIN.push({ niv: el.dataset.niv, id: Number(el.dataset.id) }); }); }
+    else if (el.dataset.alerte) { naviguer(() => { ORIGINE = { vue: VUE, chemin: CHEMIN.map(c => ({ ...c })) }; FILTRE_J = "attention"; RECH = ""; JEUNE_OUVERT = null; VUE = "jeunes"; }); }
+    else if (el.dataset.retourOrigine !== undefined) { naviguer(() => { VUE = ORIGINE ? ORIGINE.vue : "pilotage"; CHEMIN = ORIGINE ? ORIGINE.chemin : CHEMIN; ORIGINE = null; RECH = ""; FILTRE_J = "en_cours"; JEUNE_OUVERT = null; }); }
+    else if (el.dataset.effacer !== undefined) { naviguer(() => { RECH = ""; JEUNE_OUVERT = null; }); }
     else if (el.dataset.jeune) { allerJeune(Number(el.dataset.jeune)); }
     else if (el.dataset.toggleEtab !== undefined) { const id = Number(el.dataset.toggleEtab); OUVERTS.has(id) ? OUVERTS.delete(id) : OUVERTS.add(id); el.parentElement.classList.toggle("open"); }
     else if (el.dataset.toggleJeune) { const id = Number(el.dataset.toggleJeune); JEUNE_OUVERT = JEUNE_OUVERT === id ? null : id; el.parentElement.classList.toggle("open"); }
     else if (el.dataset.ajoutJeune) { ouvrirAction({ jeune: Number(el.dataset.ajoutJeune) }); }
     else if (el.dataset.clore) { ouvrirClore(Number(el.dataset.clore)); }
-    else if (el.dataset.fj) { FILTRE_J = el.dataset.fj; rendre(); }
+    else if (el.dataset.fj) { naviguer(() => { FILTRE_J = el.dataset.fj; }); }
     else if (el.dataset.sem !== undefined) { const s = Number(el.dataset.sem); SEMAINE = s === 0 ? lundi(aujourdhui()) : SEMAINE + s * 7 * 86400; rendre(); }
     else if (el.dataset.act) { const a = D.acts.find(x => String(x.id) === el.dataset.act); if (a && a.Jeune) allerJeune(a.Jeune); else if (a) toast(`${a.type.Libelle || ""} · ${a.Intitule || ""}`); }
     else if (el.classList.contains("day")) {
@@ -619,12 +642,13 @@ function brancher() {
 }
 function allerJeune(id) {
   const j = D.jeunes.find(x => x.id === id); if (!j) return;
-  VUE = "jeunes"; FILTRE_J = "tous"; RECH = j.Identifiant; JEUNE_OUVERT = id; rendre();
+  naviguer(() => { if (VUE !== "jeunes" || !ORIGINE) ORIGINE = { vue: VUE, chemin: CHEMIN.map(c => ({ ...c })) }; VUE = "jeunes"; FILTRE_J = "tous"; RECH = j.Identifiant; JEUNE_OUVERT = id; });
   const el = document.getElementById("j" + id); if (el) el.scrollIntoView({ block: "start" });
 }
 
 window.addEventListener("DOMContentLoaded", () => {
   brancher();
+  try { history.replaceState(etat(), "", "#" + VUE); } catch (err) { /* historique indisponible */ }
   if (window.grist && window.self !== window.top) {
     grist.ready({ requiredAccess: "full" });
     let t = null;
