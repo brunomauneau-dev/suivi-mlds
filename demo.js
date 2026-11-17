@@ -14,13 +14,14 @@ function donneesDemo() {
     ["40", "Landes", 1, "Mont-de-Marsan", "Dax", 2], ["47", "Lot-et-Garonne", 1, "Agen", "Villeneuve-sur-Lot", 3], ["64", "Pyrénées-Atlantiques", 1, "Pau", "Bayonne", 4],
     ["79", "Deux-Sèvres", 3, "Niort", "Bressuire", 2], ["86", "Vienne", 3, "Poitiers", "Châtellerault", 3], ["87", "Haute-Vienne", 2, "Limoges", "Saint-Junien", 4]];
   const Departements = DEPS.map((d, i) => ({ id: i + 1, Code: d[0], Departement: d[1], Academie: d[2] }));
-  const Etablissements = [], Agents = [];
+  const Etablissements = [], Agents = [], Bassins = [];
   const PRENOMS = ["Camille", "Dominique", "Alex", "Sacha", "Morgan", "Charlie", "Lou", "Noa", "Eden", "Maël", "Inès", "Yanis", "Jade", "Lucas", "Manon", "Enzo", "Chloé", "Hugo", "Léna", "Théo", "Emma", "Rayan", "Zoé", "Ethan", "Sarah", "Adam", "Lina", "Tom", "Nina", "Liam"];
   const NOMS = ["Fictif", "Exemple", "Démo", "Essai", "Modèle", "Témoin", "Factice", "Test", "Maquette", "Prototype"];
   const MODELES = [["Collège", "Collège fictif"], ["Lycée professionnel", "Lycée professionnel fictif"], ["Collège", "Collège fictif"], ["Lycée polyvalent", "Lycée polyvalent fictif"], ["Lycée professionnel", "Lycée professionnel fictif"], ["Collège", "Collège fictif"], ["Collège", "Collège fictif"]];
   DEPS.forEach((d, i) => {
     const n = 2 + Math.floor(d[5] / 2);
-    for (let k = 0; k < n; k++) { const v = k % 2 ? d[4] : d[3]; Etablissements.push({ id: Etablissements.length + 1, Nom: `${MODELES[k][1]} ${String.fromCharCode(65 + k)} – ${v}`, Type: MODELES[k][0], Commune: v, Departement: i + 1 }); }
+    const zap = [d[3], d[4]].map(v => { Bassins.push({ id: Bassins.length + 1, Bassin: v, Departement: i + 1, PAPS: `PAPS fictif de ${v}` }); return Bassins.length; });
+    for (let k = 0; k < n; k++) { const v = k % 2 ? d[4] : d[3]; Etablissements.push({ id: Etablissements.length + 1, Nom: `${MODELES[k][1]} ${String.fromCharCode(65 + k)} – ${v}`, Type: MODELES[k][0], Commune: v, Departement: i + 1, Bassin: zap[k % 2] }); }
     const na = 1 + (d[5] >= 4) + (d[5] >= 9);
     for (let k = 0; k < na; k++) Agents.push({ id: Agents.length + 1, Prenom: PRENOMS[(i * 3 + k) % PRENOMS.length], Nom: NOMS[(i + k) % NOMS.length].toUpperCase(), Departement: i + 1, Role_Grist: "Agent" });
   });
@@ -37,7 +38,8 @@ function donneesDemo() {
     ["3e PREPA METIER", "3ème prépa métiers", 4], ["1re année CAP", "1ère CAP", 10], ["Terminale CAP", "Terminales CAP", 4], ["2nde professionnelle", "2nde PRO", 18],
     ["1re professionnelle", "1ère PRO", 8], ["Terminale professionnelle", "Terminale PRO", 3], ["Apprentissage niveau III (CAP)", "Apprentissage niveau 3 (CAP)", 5],
     ["2nde GT", "2nde GT", 10], ["1re GT", "1ère GT", 4], ["Autres LP", "PAPS / Autres", 2]];
-  const Classes_origine = CLASSES.map((c, i) => ({ id: i + 1, Classe: c[0], Ligne_synthese: c[1] }));
+  const CYCLE = c => /CAP|professionnelle|Apprentissage|LP/.test(c) ? "Voie professionnelle" : /GT/.test(c) ? "Voie générale et technologique" : "1er cycle";
+  const Classes_origine = CLASSES.map((c, i) => ({ id: i + 1, Classe: c[0], Ligne_synthese: c[1], Cycle: CYCLE(c[0]) }));
   const DISP = [["PREV_ENT", "Entretiens de prévention", "Prévention", "", "Entretiens de prévention"], ["GPDS", "Suivi GPDS", "Prévention", "", "Suivis GPDS"],
     ["INFO_SAS", "Action d'information et sensibilisation (SAS)", "Information et sensibilisation", "1 - Actions information et sensibilisation", ""],
     ["PAPS_TP", "PAPS temps plein", "Remobilisation", "2 - Actions remobilisation et remise à niveau", "PAPS temps plein"],
@@ -97,9 +99,10 @@ function donneesDemo() {
         Diplome: pondere(["aucun", "CFG", "DNB", "CAP"], [55, 10, 30, 5]), Profils: prof.length ? ["L", ...prof] : null };
       Jeunes.push(j);
       const dsp = etab ? pondere(["PREV_ENT", "GPDS", "INFO_SAS"], [55, 30, 15]) : pondere(["PAPS_TP", "PAFI_POLES", "PAFI_COORD", "REMOB", "MICRO", "FSE"], [30, 20, 15, 20, 8, 7]);
-      if (!etab && rnd() < .25) Parcours.push({ id: Parcours.length + 1, Jeune: j.id, Dispositif: disp.CAND_PAPS, Etablissement: 0, Date_entree: entree, Date_sortie: entree, Motif_entree: ent(1, 5) });
+      if (!etab && rnd() < .25) Parcours.push({ id: Parcours.length + 1, Jeune: j.id, Dispositif: disp.CAND_PAPS, Etablissement: 0, Date_entree: entree, Date_sortie: entree, Motif_entree: ent(1, 5), Agent: ag.id });
       const pe = ouvre(entree + ent(0, 20) * J), exam = ["REMOB", "MICRO", "PAPS_TP"].includes(dsp) && rnd() < .4 ? choix(["CAP", "DNB", "Bac Pro"]) : null;
-      Parcours.push({ id: Parcours.length + 1, Jeune: j.id, Dispositif: disp[dsp], Etablissement: etab || choix(etabs), Date_entree: pe,
+      Parcours.push({ id: Parcours.length + 1, Jeune: j.id, Dispositif: disp[dsp], Etablissement: etab || choix(etabs), Date_entree: pe, Agent: ag.id,
+        Difficultes: dsp === "MICRO" ? choix(["méthodologie, organisation", "confiance en soi", "assiduité", "lacunes en mathématiques"]) : "",
         Date_sortie: sortie && sortie >= pe ? sortie : null, Motif_entree: etab ? choix([6, 7, 8]) : ent(1, 5), Modalites: choix(["entretiens individuels", "tutorat, stage", "remise à niveau", "ateliers collectifs"]),
         Examen_prepare: exam, Admis: exam && sortie ? choix(["O", "O", "N"]) : null, Devenir: sortie && sortie >= pe ? sit : null,
         Classe_reprise: sit && /statut scolaire/.test(sit) ? choix(["2NDPRO", "1CAP2", "2GT"]) : null });
@@ -127,7 +130,7 @@ function donneesDemo() {
       }
     }
   });
-  return { Academies, Departements, Bassins: [], Etablissements, Agents, Motifs, Types_activite, Parcours, Dispositifs, Motifs_entree, Classes_origine,
+  return { Academies, Departements, Bassins, Etablissements, Agents, Motifs, Types_activite, Parcours, Dispositifs, Motifs_entree, Classes_origine,
     Seuils: [{ Sans_premiere_action_j: 15, Sans_action_j: 30, Cumul_motifs: 3, Jeunes_sans_GPDS: 10, Part_attention: .2, Baisse_activite: -.2, Agent_sans_saisie_j: 15 }],
     Jeunes, Activites };
 }

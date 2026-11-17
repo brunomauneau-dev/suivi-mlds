@@ -31,7 +31,7 @@ function tranche(a) { return a == null ? "" : a < 16 ? TRANCHES[0] : a === 16 ? 
 // appelé par preparer() dans app.js
 function preparerParcours(d, b) {
   const idx = arr => new Map((arr || []).map(r => [r.id, r]));
-  d.dispositifs = idx(b.Dispositifs); d.motifsEntree = idx(b.Motifs_entree); d.classes = idx(b.Classes_origine);
+  d.dispositifs = idx(b.Dispositifs); d.motifsEntree = idx(b.Motifs_entree); d.classes = idx(b.Classes_origine); d.zaps = idx(b.Bassins);
   const parJeune = new Map(d.jeunes.map(j => [j.id, j]));
   d.parcours = (b.Parcours || []).map(p => {
     const j = parJeune.get(p.Jeune) || null;
@@ -39,6 +39,7 @@ function preparerParcours(d, b) {
     p.etabP = p.Etablissement || (j ? j.etab : 0);
     p.depId = (d.etab.get(p.etabP) || {}).Departement || (j ? j.depId : 0);
     p.acaId = (d.dep.get(p.depId) || {}).Academie || 0;
+    p.zapId = (d.etab.get(p.etabP) || {}).Bassin || 0;
     p.age = ageA(j && j.Date_naissance, p.Date_entree);
     return p;
   });
@@ -60,7 +61,12 @@ function bornesRapport() {
 }
 function dansTerritoire(p) {
   if (!R_TERR) return true;
-  const [niv, id] = R_TERR.split(":"); return niv === "aca" ? p.acaId === Number(id) : p.depId === Number(id);
+  const [niv, id] = R_TERR.split(":"); return niv === "aca" ? p.acaId === Number(id) : niv === "zap" ? p.zapId === Number(id) : p.depId === Number(id);
+}
+function etabDansTerritoire(e) {
+  if (!R_TERR) return true;
+  const [niv, id] = R_TERR.split(":"), dep = D.dep.get(e.Departement) || {};
+  return niv === "aca" ? dep.Academie === Number(id) : niv === "zap" ? e.Bassin === Number(id) : e.Departement === Number(id);
 }
 function parcoursPeriode(filtreDisp) {
   const [deb, fin] = bornesRapport();
@@ -69,7 +75,7 @@ function parcoursPeriode(filtreDisp) {
 function nomTerr() {
   if (!R_TERR) return "Région académique Nouvelle-Aquitaine";
   const [niv, id] = R_TERR.split(":");
-  return niv === "aca" ? "Académie de " + (D.aca.get(Number(id)) || {}).Academie : (D.dep.get(Number(id)) || {}).Departement;
+  return niv === "aca" ? "Académie de " + (D.aca.get(Number(id)) || {}).Academie : niv === "zap" ? "ZAP " + ((D.zaps.get(Number(id)) || {}).Bassin || "") : (D.dep.get(Number(id)) || {}).Departement;
 }
 
 /* ---------- 1. synthèse trimestrielle ---------- */
@@ -111,41 +117,65 @@ function rapportsAction() { return [...new Set([...D.dispositifs.values()].map(d
 function actionDonnees() {
   const rap = R_ACTION || rapportsAction()[0] || "";
   const ps = parcoursPeriode(d => d.Rapport === rap).filter(p => !R_ETAB || String(p.etabP) === R_ETAB);
-  const info = /information/i.test(rap);
+  const info = /information/i.test(rap), micro = /micro/i.test(rap);
   const tete = ["Nom-Prénom (ou initiales)", "- 16a", "OF 16/18", "type etab origine", "classe d'origine", "période d'entrée", "période de sortie",
-    info ? "Motif d'accompagnement" : "Motif d'inscription", ...(info ? ["Modalité(s) d'accompagnement"] : []), "Diplôme possédé",
+    info ? "Motif d'accompagnement" : micro ? "Difficultés majeures observées" : "Motif d'inscription", ...(info ? ["Modalité(s) d'accompagnement"] : []), "Diplôme possédé",
     "Examen ou concours préparé : type", "admis O/N", "Type de solution", "Si statut scolaire ou apprentissage, indiquer la classe", "Commentaire"];
   const ligne = p => { const j = p.jeune; return [`${(j.Nom || "").toUpperCase()} ${j.Prenom || ""}`.trim(), p.age != null && p.age < 16 ? "OUI" : "NON",
     p.age != null && p.age >= 16 && p.age < 18 ? "OUI" : "NON", j.Type_etab_origine || "", (j.classe || {}).Classe || "", periode(p.Date_entree), periode(p.Date_sortie),
-    info ? (p.motifE.Motif || "") : (p.motifE.Motif_inscription || p.motifE.Motif || ""), ...(info ? [p.Modalites || ""] : []), j.Diplome || "",
+    info ? (p.motifE.Motif || "") : micro ? (p.Difficultes || "") : (p.motifE.Motif_inscription || p.motifE.Motif || ""), ...(info ? [p.Modalites || ""] : []), j.Diplome || "",
     p.Examen_prepare || "", p.Admis || "", p.Devenir || "", p.Classe_reprise || "", p.Commentaire || ""]; };
   const tri = (a, b) => (a.jeune.Nom || "").localeCompare(b.jeune.Nom || "");
   const filles = ps.filter(p => p.jeune.Sexe === "F").sort(tri), garcons = ps.filter(p => p.jeune.Sexe !== "F").sort(tri);
-  // tableau de synthèse : classe d'origine × devenir
-  const classes = [...D.classes.values()].map(c => c.Classe);
-  const mat = classes.map(c => { const a = ps.filter(p => (p.jeune.classe || {}).Classe === c); return [c, a.length, ...DEVENIRS.map(([dv]) => a.filter(p => p.Devenir === dv).length), a.filter(p => !p.Date_sortie).length]; })
-    .filter(r => r[1]);
-  mat.push(["Total", ps.length, ...DEVENIRS.map(([dv]) => ps.filter(p => p.Devenir === dv).length), ps.filter(p => !p.Date_sortie).length]);
+  // tableau de synthèse (1re feuille du modèle) : classe d'origine × devenir, en F / G / T, avec sous-totaux par voie
+  const fgt = arr => { const f = arr.filter(p => p.jeune.Sexe === "F").length; return [f, arr.length - f, arr.length]; };
+  const ligneMat = (lib, arr, tot) => {
+    const dev = DEVENIRS.flatMap(([dv]) => fgt(arr.filter(p => p.Devenir === dv)));
+    const avec = fgt(arr.filter(p => p.Devenir)), sans = arr.length - avec[2];
+    return { lib, tot, cells: [...fgt(arr), ...dev, ...avec], controle: arr.length ? (sans ? `${sans} sans devenir` : "OK") : "" };
+  };
+  const GROUPES = [["1er cycle", "Total collège"], ["Voie professionnelle", "Total lycée professionnel"], ["Voie générale et technologique", "Total lycée général et technologique"], ["Autres", null]];
+  const mat = [];
+  GROUPES.forEach(([cycle, libTot]) => {
+    const cls = [...D.classes.values()].filter(c => c.Cycle === cycle);
+    cls.forEach(c => mat.push(ligneMat(c.Classe, ps.filter(p => p.jeune.classe === c))));
+    if (libTot) mat.push(ligneMat(libTot, ps.filter(p => p.jeune.classe && p.jeune.classe.Cycle === cycle), true));
+  });
+  const sansClasse = ps.filter(p => !p.jeune.classe);
+  if (sansClasse.length) mat.push(ligneMat("Classe d'origine non renseignée", sansClasse));
+  mat.push(ligneMat("TOTAL", ps, true));
   const etabs = [...new Set(parcoursPeriode(d => d.Rapport === rap).map(p => p.etabP))].map(id => D.etab.get(id)).filter(Boolean).sort((a, b) => a.Nom.localeCompare(b.Nom));
-  return { rap, tete, filles: filles.map(ligne), garcons: garcons.map(ligne), mat, etabs, nb: ps.length,
+  const etab = R_ETAB ? (D.etab.get(Number(R_ETAB)) || {}) : null;
+  const coord = [...new Set(ps.map(p => D.agents.get(p.Agent)).filter(Boolean).map(a => `${a.Prenom || ""} ${a.Nom || ""}`.trim()))].join(", ");
+  const entete = [["Etablissement :", etab ? etab.Nom : "Toutes les structures porteuses"], ["Ville :", etab ? (etab.Commune || "") : ""],
+    ["Coordonnateur/trice MLDS :", coord], ["Date :", fmt(aujourdhui())], ["Signature du chef d'établissement :", ""]];
+  return { rap, tete, filles: filles.map(ligne), garcons: garcons.map(ligne), mat, etabs, nb: ps.length, entete,
     nbF: filles.length, nbG: garcons.length };
 }
 
 /* ---------- 3. prévention : profils et motifs ---------- */
 function preventionDonnees() {
   const ps = parcoursPeriode(d => d.Famille === "Prévention");
+  const pafi = parcoursPeriode(d => /PAFI/i.test(d.Code || "") || /PAFI/i.test(d.Libelle || ""));
   const profils = [...D.motifs.values()].filter(m => m.Nature === "Profil"), motifs = [...D.motifs.values()].filter(m => m.Nature !== "Profil");
-  const parEtab = new Map();
-  ps.forEach(p => { const k = p.etabP || 0; if (!parEtab.has(k)) parEtab.set(k, new Set()); parEtab.get(k).add(p.jeune); });
+  const compter = js => [js.length, ...[...profils, ...motifs].map(m => js.filter(j => j.profils.includes(m) || j.motif === m || j.secondaires.includes(m)).length)];
+  const uniques = arr => [...new Set(arr.map(p => p.jeune))];
   const code = t => ({ "Collège": "CLG", "Lycée professionnel": "LP", "Lycée général et technologique": "LGT", "Lycée polyvalent": "LPO", "EREA": "EREA" }[t] || t || "");
-  const lignes = [...parEtab.entries()].map(([eid, js]) => {
-    const e = D.etab.get(eid) || {}; js = [...js];
-    const a = m => js.filter(j => j.profils.includes(m) || j.motif === m || j.secondaires.includes(m)).length;
-    return [code(e.Type), (e.Commune || "").toUpperCase(), e.Nom || "Sans établissement", js.length, ...profils.map(a), ...motifs.map(a)];
-  }).sort((x, y) => x[1].localeCompare(y[1]));
-  const tot = ["", "", "TOTAL", ...lignes[0] ? lignes[0].slice(3).map((_, i) => lignes.reduce((s, l) => s + l[i + 3], 0)) : []];
+  const lignes = [...D.etab.values()].filter(etabDansTerritoire)
+    .map(e => [code(e.Type), (e.Commune || "").toUpperCase(), e.Nom || "", ...compter(uniques(ps.filter(p => p.etabP === e.id)))])
+    .sort((x, y) => x[1].localeCompare(y[1]) || x[2].localeCompare(y[2]));
+  const horsEtab = uniques(ps.filter(p => !p.etabP || !D.etab.has(p.etabP)));
+  if (horsEtab.length) lignes.push(["", "", "Sans établissement", ...compter(horsEtab)]);
+  const lignePafi = ["PAFI - PAFI-TDO", "", "", ...compter(uniques(pafi))];
+  const toutes = [...lignes, lignePafi];
+  const tot = ["", "", "TOTAL", ...toutes[0].slice(3).map((_, i) => toutes.reduce((s, l) => s + l[i + 3], 0))];
+  // ZAP et PAPS du territoire choisi
+  const zaps = R_TERR.startsWith("zap:") ? [D.zaps.get(Number(R_TERR.split(":")[1]))].filter(Boolean)
+    : [...new Set([...D.etab.values()].filter(etabDansTerritoire).map(e => e.Bassin))].map(id => D.zaps.get(id)).filter(Boolean);
+  const zap = zaps.length === 1 ? zaps[0].Bassin : zaps.length ? `${zaps.length} ZAP` : "";
+  const paps = [...new Set(zaps.map(z => z.PAPS).filter(Boolean))].join(", ");
   return { tete: ["CODE", "VILLE", "ETABLISSEMENT", "SUIVIS INDIV", ...profils.map(m => m.Libelle.toUpperCase()), ...motifs.map(m => m.Libelle.toUpperCase())],
-    nbProfils: profils.length, nbMotifs: motifs.length, lignes, tot };
+    nbProfils: profils.length, nbMotifs: motifs.length, lignes, lignePafi, tot, zap, paps };
 }
 
 /* ---------- rendu ---------- */
@@ -154,12 +184,29 @@ function tableHtml(tete, lignes, opts = {}) {
     ${lignes.map(l => `<tr class="${l[l.length - 1] === true || /^(Total|TOTAL|Sous-total)/.test(l[0]) || l[2] === "TOTAL" ? "tot" : ""}">${l.filter(x => x !== true).map((c, i) => `<td class="${i >= (opts.num ?? 1) ? "n" : ""}">${c === 0 ? '<span class="zero">0</span>' : esc(c)}</td>`).join("")}</tr>`).join("")
     || `<tr><td colspan="${tete.length}" class="vide">Aucun jeune sur la période.</td></tr>`}</tbody></table></div>`;
 }
+const NOTES_DEVENIR = ["(1) rescolarisation, droit au retour, droit au maintien, mention complémentaire",
+  "(2) contrat d'apprentissage (CFA public ou privé), contrat de professionnalisation. Dispositif GRETA",
+  "(3) dispositif régional de formation (qualifiant ou préqualifiant), dispositif GRETA",
+  "(4) structure de retour à l'école (micro collège, micro lycée, lycée nouvelle chance…)",
+  "(5) ne pas comptabiliser ici les jeunes pris en charge en service civique alterné/combiné (onglet diversification des parcours)",
+  "(6) CDD, CDI, etc", "(7) E2C, EPIDE, Service militaire volontaire (SMV), Mission Locale, etc",
+  "Élèves allophones : nouvellement arrivés (EANA)", "Enseignement privé s/s contrat : englobe collèges & lycées privés s/s contrat"];
+const RENVOIS = ["(1)", "(2)", "(3)", "(4)", "(5)", "(6)", "(7)", "", "", ""];
+function matriceHtml(mat) {
+  const groupes = [["Nombre de jeunes pris en charge", ""], ...DEVENIRS.map((d, i) => [d[0], RENVOIS[i]]), ["Total (devenirs renseignés)", ""]];
+  return `<div class="scroll"><table class="tbl rap mat"><thead>
+    <tr><th rowspan="2">Classe d'origine</th>${groupes.map(([g, r]) => `<th colspan="3" class="grp">${esc(g)} ${r ? `<sup>${r}</sup>` : ""}</th>`).join("")}<th rowspan="2">Contrôle saisie</th></tr>
+    <tr>${groupes.map(() => '<th class="n">F</th><th class="n">G</th><th class="n">T</th>').join("")}</tr></thead><tbody>
+    ${mat.map(l => `<tr class="${l.tot ? "tot" : ""}"><td>${esc(l.lib)}</td>${l.cells.map((c, i) => `<td class="n ${i % 3 === 2 ? "t" : ""}">${c ? c : '<span class="zero">·</span>'}</td>`).join("")}
+      <td class="${l.controle === "OK" ? "okc" : l.controle ? "warnc" : ""}">${esc(l.controle)}</td></tr>`).join("")}</tbody></table></div>`;
+}
 function vueRapports() {
   const [, , lib] = bornesRapport(), a0 = anneeScolaire(aujourdhui());
   if (R_ANNEE == null) R_ANNEE = a0;
   const opt = (v, l, cur) => `<option value="${esc(v)}" ${String(v) === String(cur) ? "selected" : ""}>${esc(l)}</option>`;
   const terr = [opt("", "Région académique", R_TERR), ...[...D.aca.values()].map(a => opt("aca:" + a.id, "Académie de " + a.Academie, R_TERR)),
-    ...[...D.dep.values()].sort((a, b) => a.Code.localeCompare(b.Code)).map(d => opt("dep:" + d.id, `${d.Departement} (${d.Code})`, R_TERR))].join("");
+    ...[...D.dep.values()].sort((a, b) => a.Code.localeCompare(b.Code)).map(d => opt("dep:" + d.id, `${d.Departement} (${d.Code})`, R_TERR)),
+    ...(D.zaps.size ? [`<optgroup label="ZAP">${[...D.zaps.values()].sort((a, b) => (a.Bassin || "").localeCompare(b.Bassin || "")).map(z => opt("zap:" + z.id, z.Bassin, R_TERR)).join("")}</optgroup>`] : [])].join("");
   const chip = (k, l) => `<button class="chip ${R_TYPE === k ? "on" : ""}" data-rtype="${k}">${l}</button>`;
   let corps = "";
   if (R_TYPE === "synthese") {
@@ -167,18 +214,22 @@ function vueRapports() {
       `<p class="vide">Comptage : jeunes présents dans l'action pendant la période (entrés avant la fin de la période et non sortis avant son début).</p>`;
   } else if (R_TYPE === "action") {
     const A = actionDonnees();
+    const enTete = `<dl class="f entete">${A.entete.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v) || "&nbsp;"}</dd>`).join("")}</dl>`;
     corps = `<div class="bar"><select id="r-action">${rapportsAction().map(r => opt(r, r, A.rap)).join("")}</select>
         <select id="r-etab">${opt("", "Toutes les structures porteuses", R_ETAB)}${A.etabs.map(e => opt(e.id, e.Nom, R_ETAB)).join("")}</select>
         <span class="vide">${A.nb} jeune(s) · ${A.nbF} fille(s) · ${A.nbG} garçon(s)</span></div>
-      <div class="card"><h2>Nombre de jeunes et devenir à l'issue de l'action<small>par classe d'origine</small></h2>
-        ${tableHtml(["Classe d'origine", "Total", ...DEVENIRS.map(d => d[0]), "Encore dans l'action"], A.mat)}</div>
+      <div class="card"><h2>${esc(A.rap)}<small>${esc(lib)}</small></h2>${enTete}
+        <h2 style="margin-top:14px">Nombre de jeunes pris en charge et devenir à l'issue de l'action<small>F = filles · G = garçons · T = total</small></h2>
+        ${matriceHtml(A.mat)}
+        <ol class="notes">${NOTES_DEVENIR.map(n => `<li>${esc(n)}</li>`).join("")}</ol></div>
       <div class="card"><h2>Filles<small>${A.nbF}</small></h2>${tableHtml(A.tete, A.filles, { num: 99 })}</div>
       <div class="card"><h2>Garçons<small>${A.nbG}</small></h2>${tableHtml(A.tete, A.garcons, { num: 99 })}</div>`;
   } else {
     const P = preventionDonnees();
     const sur = `<tr><th colspan="3"></th><th class="n">INDIV</th><th colspan="${P.nbProfils}" class="grp">PROFILS</th><th colspan="${P.nbMotifs}" class="grp">MOTIFS</th></tr>`;
     corps = `<div class="card"><h2>PRÉVENTION<small>suivis individuels, profils et motifs par établissement</small></h2>
-      ${tableHtml(P.tete, P.lignes.concat(P.lignes.length ? [P.tot] : []), { num: 3, sur })}
+      <dl class="f entete"><dt>ZAP :</dt><dd>${esc(P.zap) || "&nbsp;"}</dd><dt>PAPS :</dt><dd>${esc(P.paps) || "<span class='vide'>à renseigner dans la table Bassins / ZAP</span>"}</dd></dl>
+      ${tableHtml(P.tete, [...P.lignes, P.lignePafi, P.tot], { num: 3, sur })}
       <p class="vide">Un même jeune peut avoir plusieurs profils et plusieurs motifs : les colonnes ne s'additionnent pas.</p></div>`;
   }
   return `<div class="bar">${chip("synthese", "Synthèse trimestrielle")}${chip("action", "Tableaux par action")}${chip("prevention", "Prévention – profils")}
@@ -201,15 +252,17 @@ function exporterRapport() {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), "Synthèse"); nom = "synthese-trimestrielle";
   } else if (R_TYPE === "action") {
     const A = actionDonnees();
-    const etab = R_ETAB ? (D.etab.get(Number(R_ETAB)) || {}) : {};
-    const ent = [[A.rap], ["Année scolaire " + lib], ["Etablissement :", etab.Nom || "(toutes les structures)"], ["Ville :", etab.Commune || ""], []];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([...ent, ["Classe d'origine", "Total", ...DEVENIRS.map(d => d[0]), "Encore dans l'action"], ...A.mat]), "Synthèse");
+    const ent = [[A.rap], [lib], ...A.entete, []];
+    const h1 = ["Classe d'origine", "Nombre de jeunes pris en charge", "", "", ...DEVENIRS.flatMap((d, i) => [d[0] + (RENVOIS[i] ? " " + RENVOIS[i] : ""), "", ""]), "Total", "", "", "Contrôle saisie"];
+    const h2 = ["", ...Array(DEVENIRS.length + 2).fill(["F", "G", "T"]).flat(), ""];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([...ent, h1, h2, ...A.mat.map(l => [l.lib, ...l.cells, l.controle]), [], ...NOTES_DEVENIR.map(n => [n])]), "Synthèse");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([...ent, A.tete, ...A.filles]), "Filles");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([...ent, A.tete, ...A.garcons]), "Garçons");
     nom = A.rap.replace(/[^\wÀ-ÿ-]+/g, "_");
   } else {
     const P = preventionDonnees();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([...entete, ["", "", "", "INDIV", "PROFILS", ...Array(P.nbProfils - 1).fill(""), "MOTIFS"], P.tete, ...P.lignes, P.tot]), "PRÉVENTION");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([...entete, ["ZAP :", P.zap], ["PAPS :", P.paps], [], ["", "", "", "PRÉVENTION"],
+      ["", "", "", "INDIV", "PROFILS", ...Array(P.nbProfils - 1).fill(""), "MOTIFS"], P.tete, ...P.lignes, P.lignePafi, P.tot]), "PRÉVENTION");
     nom = "prevention-profils";
   }
   XLSX.writeFile(wb, `${nom}-${lib.replace(/[^\w-]+/g, "-")}.xlsx`);
@@ -219,7 +272,7 @@ function exporterRapport() {
 function blocParcours(j) {
   return `<div style="margin-top:14px"><b style="font-size:13px">Parcours MLDS</b>
     <ul class="tl" style="margin-top:6px">${(j.parcours || []).map(p => `<li><span class="d">${fmt(p.Date_entree)}</span><span class="p" style="background:${p.Date_sortie ? "var(--grey)" : "var(--blue)"}"></span>
-      <span><b>${esc(p.disp.Libelle || "Dispositif")}</b>${p.motifE.Motif ? `<small>Motif d'entrée : ${esc(p.motifE.Motif)}</small>` : ""}
+      <span><b>${esc(p.disp.Libelle || "Dispositif")}</b>${p.motifE.Motif ? `<small>Motif d'entrée : ${esc(p.motifE.Motif)}</small>` : ""}${p.Difficultes ? `<small>Difficultés : ${esc(p.Difficultes)}</small>` : ""}
       ${p.Date_sortie ? `<small>Sortie le ${fmt(p.Date_sortie)} : ${esc(p.Devenir || "devenir non renseigné")}</small>` : `<small><button class="btn-lien" data-clore-parcours="${p.id}">Clore ce parcours</button></small>`}</span></li>`).join("")
       || `<li><span class="d"></span><span></span><span class="vide">Aucun parcours enregistré.</span></li>`}</ul>
     <button class="btn sec" data-inscrire="${j.id}">+ Inscrire dans un dispositif</button></div>`;
@@ -232,6 +285,7 @@ function ouvrirInscription(jid) {
     <label>Structure porteuse<select name="etab"><option value="">—</option>${[...D.etab.values()].sort((a, b) => (a.Nom || "").localeCompare(b.Nom || "")).map(e => `<option value="${e.id}" ${e.id === j.etab ? "selected" : ""}>${esc(e.Nom)}</option>`).join("")}</select></label>
     <label class="full">Motif d'entrée<select name="motif"><option value="">—</option>${[...D.motifsEntree.values()].map(m => `<option value="${m.id}">${esc(m.Motif)}</option>`).join("")}</select></label>
     <label class="full">Modalités d'accompagnement<input name="modal" placeholder="2 ou 3 mots"></label>
+    <label class="full">Difficultés majeures observées <span class="vide">(micro-lycée)</span><textarea name="diff" rows="2"></textarea></label>
     <label>Examen préparé<select name="exam"><option value=""></option>${["Bac Gen", "Bac Pro", "Bac Tech", "BT", "CAP", "CFG", "DELF", "DNB", "DNB Pro", "Autre"].map(x => `<option>${x}</option>`).join("")}</select></label>
   </form><div class="msg" id="fi-msg"></div><div class="foot"><button class="btn sec" data-close>Annuler</button><button class="btn" id="fi-ok">Inscrire</button></div>`);
   const f = bg.querySelector("#fi");
@@ -239,7 +293,7 @@ function ouvrirInscription(jid) {
   bg.querySelector("#fi-ok").onclick = async () => {
     if (!f.disp.value) { bg.querySelector("#fi-msg").textContent = "Choisissez le dispositif."; return; }
     const rec = { Jeune: jid, Dispositif: Number(f.disp.value), Date_entree: versDate(f.date.value), Etablissement: Number(f.etab.value) || 0,
-      Motif_entree: Number(f.motif.value) || 0, Modalites: f.modal.value, Examen_prepare: f.exam.value || null, Agent: j.Agent_referent || 0 };
+      Motif_entree: Number(f.motif.value) || 0, Modalites: f.modal.value, Difficultes: f.diff.value, Examen_prepare: f.exam.value || null, Agent: j.Agent_referent || 0 };
     try { await ecrire([["AddRecord", "Parcours", null, rec]], () => { D.parcours.push({ id: Date.now(), ...rec }); }); bg.remove(); toast("Inscription enregistrée"); }
     catch (e) { bg.querySelector("#fi-msg").textContent = "Enregistrement refusé : " + e.message; }
   };

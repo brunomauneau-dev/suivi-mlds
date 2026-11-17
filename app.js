@@ -567,7 +567,7 @@ async function ecrire(actions, enDemo) {
   await charger();
 }
 function preparerDepuisD() {
-  preparer({ Academies: [...D.aca.values()], Departements: [...D.dep.values()], Bassins: [], Etablissements: [...D.etab.values()],
+  preparer({ Academies: [...D.aca.values()], Departements: [...D.dep.values()], Bassins: [...(D.zaps || new Map()).values()], Etablissements: [...D.etab.values()],
     Agents: [...D.agents.values()], Motifs: [...D.motifs.values()], Types_activite: [...D.types.values()], Seuils: [D.seuils],
     Jeunes: D.jeunes, Activites: D.acts, Parcours: D.parcours, Dispositifs: [...D.dispositifs.values()],
     Motifs_entree: [...D.motifsEntree.values()], Classes_origine: [...D.classes.values()] });

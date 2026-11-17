@@ -7,8 +7,8 @@
 <script src="https://docs.getgrist.com/grist-plugin-api.js" defer></script>
 <script src="lib/xlsx.full.min.js" defer></script>
 <script src="demo.js?v=2" defer></script>
-<script src="rapports.js?v=1" defer></script>
-<script src="app.js?v=3" defer></script>
+<script src="rapports.js?v=2" defer></script>
+<script src="app.js?v=4" defer></script>
 <style>
   :root {
     --bg: #f6f6f6; --card: #ffffff; --text: #1e1e1e; --muted: #666; --line: #e5e5e5;
@@ -165,6 +165,13 @@
   .btn-lien { background: none; border: 0; padding: 0; color: var(--blue); cursor: pointer; font: inherit; font-size: 12px; text-decoration: underline; }
   .crumb .retour { padding: 5px 12px; font-size: 13px; text-decoration: none; margin-right: 6px; }
   .crumb button:not(.retour) { font-size: 14px; }
+  dl.f.entete { grid-template-columns: max-content 1fr; margin-bottom: 4px; }
+  dl.f.entete dd { border-bottom: 1px dotted var(--grey); min-width: 240px; }
+  .tbl.mat td.t { background: #fafafa; font-weight: 600; }
+  .tbl.mat th { font-size: 11px; }
+  .okc { color: var(--green); font-weight: 600; }
+  ol.notes { list-style: none; padding: 0; margin: 12px 0 0; font-size: 12px; color: var(--muted); columns: 2; }
+  @media (max-width: 900px) { ol.notes { columns: 1; } }
 </style>
 </head>
 <body>
