@@ -90,7 +90,7 @@ function donneesDemo() {
       let sortie = null, sit = null;
       const age = (T - entree) / J;
       if (age > 120 && rnd() < .8) { sortie = ouvre(entree + ent(60, Math.min(age - 1, 300)) * J); sit = pondere(DEV, [30, 20, 4, 6, 6, 5, 8, 8, 6, 7]); }
-      const etab = rnd() > .15 ? choix(etabs) : 0;
+      const etab = rnd() > .42 ? choix(etabs) : 0;
       const j = { id: Jeunes.length + 1, Identifiant: `J-${new Date(entree * 1000).getUTCFullYear()}-${String(Jeunes.length + 1).padStart(4, "0")}`, Nom: choix(NOMS).toUpperCase(), Prenom: choix(PRENOMS),
         Niveau: choix(["4e", "3e", "2nde pro", "1re pro", "2nde GT", "CAP 1", "Sans affectation"]), Etablissement: etab, Statut: choix(["Scolarisé - en risque", "Scolarisé - absentéiste", "En action MLDS"]),
         Motif_principal: mp, Motifs_secondaires: sec.length ? ["L", ...sec] : null, Agent_referent: ag.id, Date_entree_suivi: entree, Date_sortie_suivi: sortie, Situation_sortie: sit,
@@ -98,14 +98,15 @@ function donneesDemo() {
         Classe_origine: classe, Type_etab_origine: classe <= 5 ? choix(["CLG", "CLG", "SEGPA"]) : classe <= 11 ? choix(["LP", "LP", "LPO", "CFA"]) : choix(["LGT", "LPO"]),
         Diplome: pondere(["aucun", "CFG", "DNB", "CAP"], [55, 10, 30, 5]), Profils: prof.length ? ["L", ...prof] : null };
       Jeunes.push(j);
-      const dsp = etab ? pondere(["PREV_ENT", "GPDS", "INFO_SAS"], [55, 30, 15]) : pondere(["PAPS_TP", "PAFI_POLES", "PAFI_COORD", "REMOB", "MICRO", "FSE"], [30, 20, 15, 20, 8, 7]);
+      const dsp = etab ? pondere(["PREV_ENT", "GPDS", "INFO_SAS"], [55, 30, 15]) : pondere(["PAPS_TP", "PAFI_POLES", "PAFI_COORD", "REMOB", "MICRO", "FSE"], [24, 18, 14, 20, 16, 8]);
+      if (!etab && rnd() < .3) { const g = ouvre(entree - ent(40, 120) * J); Parcours.push({ id: Parcours.length + 1, Jeune: j.id, Dispositif: disp.GPDS, Etablissement: choix(etabs), Date_entree: g, Date_sortie: entree, Motif_entree: 7, Agent: ag.id, Modalites: "repérage GPDS", Devenir: DEV[7] }); }
       if (!etab && rnd() < .25) Parcours.push({ id: Parcours.length + 1, Jeune: j.id, Dispositif: disp.CAND_PAPS, Etablissement: 0, Date_entree: entree, Date_sortie: entree, Motif_entree: ent(1, 5), Agent: ag.id });
-      const pe = ouvre(entree + ent(0, 20) * J), exam = ["REMOB", "MICRO", "PAPS_TP"].includes(dsp) && rnd() < .4 ? choix(["CAP", "DNB", "Bac Pro"]) : null;
+      const pe = ouvre(entree + ent(0, 20) * J), exam = ["REMOB", "MICRO", "PAPS_TP", "PAFI_POLES"].includes(dsp) && rnd() < .6 ? choix(dsp === "MICRO" ? ["Bac Gen", "Bac Pro", "Bac Tech"] : ["CAP", "DNB", "Bac Pro", "CFG"]) : null;
       Parcours.push({ id: Parcours.length + 1, Jeune: j.id, Dispositif: disp[dsp], Etablissement: etab || choix(etabs), Date_entree: pe, Agent: ag.id,
         Difficultes: dsp === "MICRO" ? choix(["méthodologie, organisation", "confiance en soi", "assiduité", "lacunes en mathématiques"]) : "",
         Date_sortie: sortie && sortie >= pe ? sortie : null, Motif_entree: etab ? choix([6, 7, 8]) : ent(1, 5), Modalites: choix(["entretiens individuels", "tutorat, stage", "remise à niveau", "ateliers collectifs"]),
         Examen_prepare: exam, Admis: exam && sortie ? choix(["O", "O", "N"]) : null, Devenir: sortie && sortie >= pe ? sit : null,
-        Classe_reprise: sit && /statut scolaire/.test(sit) ? choix(["2NDPRO", "1CAP2", "2GT"]) : null });
+        Classe_reprise: sit && /statut scolaire|apprenti/.test(sit) ? choix(["2NDPRO", "1CAP2", "2GT"]) : null });
       if (rnd() < .03 && !sortie) continue;
       let x = ouvre(entree + ent(2, 18) * J);
       act(x, "ACC_POS", ag.id, { Jeune: j.id, Compte_rendu: "Analyse de la situation, souhaits du jeune recueillis" });

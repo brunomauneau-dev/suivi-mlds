@@ -609,9 +609,10 @@ function brancher() {
   const vue = document.getElementById("vue");
   vue.addEventListener("click", e => {
     if (e.target.closest("#r-export")) { exporterRapport(); return; }
-    const el = e.target.closest("[data-retour-origine],[data-effacer],[data-rtype],[data-inscrire],[data-clore-parcours],[data-go],[data-niv],[data-alerte],[data-jeune],[data-toggle-etab],[data-toggle-jeune],[data-ajout-jeune],[data-clore],[data-fj],[data-sem],[data-act],.day");
+    const el = e.target.closest("[data-rdetail],[data-retour-origine],[data-effacer],[data-rtype],[data-inscrire],[data-clore-parcours],[data-go],[data-niv],[data-alerte],[data-jeune],[data-toggle-etab],[data-toggle-jeune],[data-ajout-jeune],[data-clore],[data-fj],[data-sem],[data-act],.day");
     if (!el) return;
     if (el.dataset.rtype) { naviguer(() => { R_TYPE = el.dataset.rtype; }); return; }
+    if (el.dataset.rdetail !== undefined) { R_DETAIL = el.dataset.rdetail === "1"; rendre(); return; }
     if (el.dataset.inscrire) { ouvrirInscription(Number(el.dataset.inscrire)); return; }
     if (el.dataset.cloreParcours) { ouvrirCloreParcours(el.dataset.cloreParcours); return; }
     if (el.dataset.go !== undefined) { naviguer(() => { CHEMIN = CHEMIN.slice(0, Number(el.dataset.go)); }); }
@@ -638,6 +639,7 @@ function brancher() {
     if (e.target.id === "agent-cal") { AGENT_CAL = e.target.value; rendre(); }
     const r = { "r-annee": v => R_ANNEE = Number(v), "r-trim": v => R_TRIM = v, "r-terr": v => R_TERR = v, "r-action": v => { R_ACTION = v; R_ETAB = ""; }, "r-etab": v => R_ETAB = v }[e.target.id];
     if (r) { r(e.target.value); rendre(); }
+    if (e.target.id === "r-vides") { R_VIDES = e.target.checked; rendre(); }
   });
 }
 function allerJeune(id) {

@@ -5,6 +5,14 @@
    Dépend de app.js (D, esc, fmt, liste, toast, aujourdhui, anneeScolaire). */
 
 let R_TYPE = "synthese", R_ANNEE = null, R_TRIM = "T1", R_TERR = "", R_ACTION = "", R_ETAB = "";
+let R_DETAIL = false, R_VIDES = true;   // tableau des devenirs : détail F/G/T ; masquer les classes sans jeune (à l'écran)
+const COURT_DEVENIR = ["Reprise statut scolaire", "Reprise apprentissage", "Reprise stagiaire form. pro", "Structure de retour à l'école",
+  "Service civique", "Emploi", "Dispositif hors EN (PSAD)", "Poursuite action MLDS", "En recherche / attente", "Abandon / injoignable"];
+// en-têtes courts du tableau PRÉVENTION (comme dans le modèle)
+const COURT_MOTIF = { P_MDPH: "MDPH", P_PSY: "PSY", P_MED: "MEDICAL", P_EDUC: "EDUCATIF", P_PJJ: "PJJ", P_ASE: "ASE", P_SOC: "SOCIAL",
+  M_MOTIV: "MOTIVATION SCOLAIRE", M_RUPT_CFA: "RUPTURE CFA", M_ABS: "ABSENTEISME", M_MAL_ETRE: "MAL ETRE", M_LANGUE: "LANGUE",
+  M_ORIENT: "ORIENTATION", M_DIFF_SCOL: "DIFF. SCOL", M_RSA: "RSA", M_PROJET: "TRAVAIL PROJET", M_ESTIME: "ESTIME DE SOI" };
+const courtMotif = m => COURT_MOTIF[m.Code] || (m.Libelle || "").toUpperCase();
 
 const DEVENIRS = [
   ["Reprise de formation sous statut scolaire", "Positive"], ["Reprise de formation sous statut d'apprenti", "Positive"],
@@ -148,7 +156,7 @@ function actionDonnees() {
   const etab = R_ETAB ? (D.etab.get(Number(R_ETAB)) || {}) : null;
   const coord = [...new Set(ps.map(p => D.agents.get(p.Agent)).filter(Boolean).map(a => `${a.Prenom || ""} ${a.Nom || ""}`.trim()))].join(", ");
   const entete = [["Etablissement :", etab ? etab.Nom : "Toutes les structures porteuses"], ["Ville :", etab ? (etab.Commune || "") : ""],
-    ["Coordonnateur/trice MLDS :", coord], ["Date :", fmt(aujourdhui())], ["Signature du chef d'établissement :", ""]];
+    ["Coordonnateur/trice MLDS :", coord.split(", ").length > 3 && !etab ? `${coord.split(", ").length} coordonnateurs : choisir une structure porteuse pour un rapport à signer` : coord], ["Date :", fmt(aujourdhui())], ["Signature du chef d'établissement :", ""]];
   return { rap, tete, filles: filles.map(ligne), garcons: garcons.map(ligne), mat, etabs, nb: ps.length, entete,
     nbF: filles.length, nbG: garcons.length };
 }
@@ -161,21 +169,25 @@ function preventionDonnees() {
   const compter = js => [js.length, ...[...profils, ...motifs].map(m => js.filter(j => j.profils.includes(m) || j.motif === m || j.secondaires.includes(m)).length)];
   const uniques = arr => [...new Set(arr.map(p => p.jeune))];
   const code = t => ({ "Collège": "CLG", "Lycée professionnel": "LP", "Lycée général et technologique": "LGT", "Lycée polyvalent": "LPO", "EREA": "EREA" }[t] || t || "");
-  const lignes = [...D.etab.values()].filter(etabDansTerritoire)
-    .map(e => [code(e.Type), (e.Commune || "").toUpperCase(), e.Nom || "", ...compter(uniques(ps.filter(p => p.etabP === e.id)))])
-    .sort((x, y) => x[1].localeCompare(y[1]) || x[2].localeCompare(y[2]));
+  const ligneEtab = e => [code(e.Type), (e.Commune || "").toUpperCase(), e.Nom || "", ...compter(uniques(ps.filter(p => p.etabP === e.id)))];
+  const somme = (lib, ls) => ["", "", lib, ...(ls[0] || ligneEtab({})).slice(3).map((_, i) => ls.reduce((s, l) => s + l[i + 3], 0))];
+  const etabs = [...D.etab.values()].filter(etabDansTerritoire);
+  const idsZap = [...new Set(etabs.map(e => e.Bassin || 0))];
+  const groupes = idsZap.map(id => {
+    const z = D.zaps.get(id) || {};
+    const lignes = etabs.filter(e => (e.Bassin || 0) === id).map(ligneEtab).sort((x, y) => x[1].localeCompare(y[1]) || x[2].localeCompare(y[2]));
+    return { zap: z.Bassin || "Sans ZAP", paps: z.PAPS || "", lignes, sousTotal: somme("Sous-total ZAP " + (z.Bassin || ""), lignes) };
+  }).sort((a, b) => a.zap.localeCompare(b.zap));
+  const lignes = groupes.flatMap(g => g.lignes);
   const horsEtab = uniques(ps.filter(p => !p.etabP || !D.etab.has(p.etabP)));
   if (horsEtab.length) lignes.push(["", "", "Sans établissement", ...compter(horsEtab)]);
   const lignePafi = ["PAFI - PAFI-TDO", "", "", ...compter(uniques(pafi))];
-  const toutes = [...lignes, lignePafi];
-  const tot = ["", "", "TOTAL", ...toutes[0].slice(3).map((_, i) => toutes.reduce((s, l) => s + l[i + 3], 0))];
-  // ZAP et PAPS du territoire choisi
-  const zaps = R_TERR.startsWith("zap:") ? [D.zaps.get(Number(R_TERR.split(":")[1]))].filter(Boolean)
-    : [...new Set([...D.etab.values()].filter(etabDansTerritoire).map(e => e.Bassin))].map(id => D.zaps.get(id)).filter(Boolean);
-  const zap = zaps.length === 1 ? zaps[0].Bassin : zaps.length ? `${zaps.length} ZAP` : "";
-  const paps = [...new Set(zaps.map(z => z.PAPS).filter(Boolean))].join(", ");
-  return { tete: ["CODE", "VILLE", "ETABLISSEMENT", "SUIVIS INDIV", ...profils.map(m => m.Libelle.toUpperCase()), ...motifs.map(m => m.Libelle.toUpperCase())],
-    nbProfils: profils.length, nbMotifs: motifs.length, lignes, lignePafi, tot, zap, paps };
+  const tot = somme("TOTAL", [...lignes, lignePafi]);
+  const zap = groupes.length === 1 ? groupes[0].zap : `${groupes.length} ZAP`;
+  const paps = groupes.length === 1 ? groupes[0].paps : "";
+  return { tete: ["CODE", "VILLE", "ETABLISSEMENT", "SUIVIS INDIV", ...profils.map(courtMotif), ...motifs.map(courtMotif)],
+    titres: ["", "", "", "Jeunes suivis en entretiens de prévention ou en GPDS", ...profils.map(m => m.Libelle), ...motifs.map(m => m.Libelle)],
+    nbProfils: profils.length, nbMotifs: motifs.length, lignes, lignePafi, tot, zap, paps, groupes, horsEtab: horsEtab.length };
 }
 
 /* ---------- rendu ---------- */
@@ -193,12 +205,23 @@ const NOTES_DEVENIR = ["(1) rescolarisation, droit au retour, droit au maintien,
   "Élèves allophones : nouvellement arrivés (EANA)", "Enseignement privé s/s contrat : englobe collèges & lycées privés s/s contrat"];
 const RENVOIS = ["(1)", "(2)", "(3)", "(4)", "(5)", "(6)", "(7)", "", "", ""];
 function matriceHtml(mat) {
-  const groupes = [["Nombre de jeunes pris en charge", ""], ...DEVENIRS.map((d, i) => [d[0], RENVOIS[i]]), ["Total (devenirs renseignés)", ""]];
-  return `<div class="scroll"><table class="tbl rap mat"><thead>
-    <tr><th rowspan="2">Classe d'origine</th>${groupes.map(([g, r]) => `<th colspan="3" class="grp">${esc(g)} ${r ? `<sup>${r}</sup>` : ""}</th>`).join("")}<th rowspan="2">Contrôle saisie</th></tr>
-    <tr>${groupes.map(() => '<th class="n">F</th><th class="n">G</th><th class="n">T</th>').join("")}</tr></thead><tbody>
-    ${mat.map(l => `<tr class="${l.tot ? "tot" : ""}"><td>${esc(l.lib)}</td>${l.cells.map((c, i) => `<td class="n ${i % 3 === 2 ? "t" : ""}">${c ? c : '<span class="zero">·</span>'}</td>`).join("")}
+  const groupes = [["Jeunes pris en charge", "", "Nombre de jeunes pris en charge"], ...DEVENIRS.map((d, i) => [COURT_DEVENIR[i], RENVOIS[i], d[0]]), ["Total devenirs", "", "Total des devenirs renseignés"]];
+  const lignes = R_VIDES ? mat.filter(l => l.tot || l.cells[2]) : mat;
+  const cols = R_DETAIL ? [0, 1, 2] : [2];
+  const val = c => c ? c : '<span class="zero">·</span>';
+  return `<div class="scroll"><table class="tbl rap mat ${R_DETAIL ? "detail" : ""}"><thead>
+    <tr><th ${R_DETAIL ? 'rowspan="2"' : ""} class="fixe">Classe d'origine</th>${groupes.map(([g, r, t], i) => `<th ${R_DETAIL ? 'colspan="3"' : ""} class="grp ${i === 0 ? "pec" : ""}" title="${esc(t)}">${esc(g)}${r ? ` <sup>${r}</sup>` : ""}</th>`).join("")}<th ${R_DETAIL ? 'rowspan="2"' : ""}>Contrôle saisie</th></tr>
+    ${R_DETAIL ? `<tr>${groupes.map(() => '<th class="n">F</th><th class="n">G</th><th class="n">T</th>').join("")}</tr>` : ""}</thead><tbody>
+    ${lignes.map(l => `<tr class="${l.tot ? "tot" : ""}"><td class="fixe">${esc(l.lib)}</td>${groupes.map((_, gi) => cols.map(k => `<td class="n ${k === 2 ? "t" : ""} ${gi === 0 ? "pec" : ""}">${val(l.cells[gi * 3 + k])}</td>`).join("")).join("")}
       <td class="${l.controle === "OK" ? "okc" : l.controle ? "warnc" : ""}">${esc(l.controle)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+function tablePrevention(P, sur) {
+  const n = P.tete.length, cell = (c, i) => `<td class="${i >= 3 ? "n" : ""} ${i === 2 ? "fixe" : ""}">${i >= 3 ? (c ? c : '<span class="zero">·</span>') : esc(c)}</td>`;
+  const ligne = (l, cls = "") => `<tr class="${cls}">${l.map(cell).join("")}</tr>`;
+  const corps = P.groupes.length === 1 ? P.groupes[0].lignes.map(l => ligne(l)).join("")
+    : P.groupes.map(g => `<tr class="zap"><td colspan="${n}">ZAP ${esc(g.zap)}${g.paps ? ` · ${esc(g.paps)}` : ""}</td></tr>${g.lignes.map(l => ligne(l)).join("")}${ligne(g.sousTotal, "stot")}`).join("");
+  return `<div class="scroll"><table class="tbl rap prev"><thead>${sur}<tr>${P.tete.map((h, i) => `<th class="${i >= 3 ? "n" : ""} ${i === 2 ? "fixe" : ""}" title="${esc(P.titres[i])}">${esc(h)}</th>`).join("")}</tr></thead>
+    <tbody>${corps}${P.horsEtab ? ligne(P.lignes[P.lignes.length - 1]) : ""}${ligne(P.lignePafi, "pafi")}${ligne(P.tot, "tot")}</tbody></table></div>`;
 }
 function vueRapports() {
   const [, , lib] = bornesRapport(), a0 = anneeScolaire(aujourdhui());
@@ -219,7 +242,11 @@ function vueRapports() {
         <select id="r-etab">${opt("", "Toutes les structures porteuses", R_ETAB)}${A.etabs.map(e => opt(e.id, e.Nom, R_ETAB)).join("")}</select>
         <span class="vide">${A.nb} jeune(s) · ${A.nbF} fille(s) · ${A.nbG} garçon(s)</span></div>
       <div class="card"><h2>${esc(A.rap)}<small>${esc(lib)}</small></h2>${enTete}
-        <h2 style="margin-top:14px">Nombre de jeunes pris en charge et devenir à l'issue de l'action<small>F = filles · G = garçons · T = total</small></h2>
+        <h2 style="margin-top:14px">Nombre de jeunes pris en charge et devenir à l'issue de l'action</h2>
+        <div class="bar" style="margin-bottom:8px">
+          <button class="chip ${R_DETAIL ? "" : "on"}" data-rdetail="0">Totaux</button><button class="chip ${R_DETAIL ? "on" : ""}" data-rdetail="1">Détail filles / garçons</button>
+          <label class="vide"><input type="checkbox" id="r-vides" ${R_VIDES ? "checked" : ""}> Masquer les classes sans jeune</label>
+          <span class="vide">Survolez un en-tête pour lire l'intitulé complet. L'export Excel contient toujours le tableau complet en F / G / T.</span></div>
         ${matriceHtml(A.mat)}
         <ol class="notes">${NOTES_DEVENIR.map(n => `<li>${esc(n)}</li>`).join("")}</ol></div>
       <div class="card"><h2>Filles<small>${A.nbF}</small></h2>${tableHtml(A.tete, A.filles, { num: 99 })}</div>
@@ -228,8 +255,9 @@ function vueRapports() {
     const P = preventionDonnees();
     const sur = `<tr><th colspan="3"></th><th class="n">INDIV</th><th colspan="${P.nbProfils}" class="grp">PROFILS</th><th colspan="${P.nbMotifs}" class="grp">MOTIFS</th></tr>`;
     corps = `<div class="card"><h2>PRÉVENTION<small>suivis individuels, profils et motifs par établissement</small></h2>
-      <dl class="f entete"><dt>ZAP :</dt><dd>${esc(P.zap) || "&nbsp;"}</dd><dt>PAPS :</dt><dd>${esc(P.paps) || "<span class='vide'>à renseigner dans la table Bassins / ZAP</span>"}</dd></dl>
-      ${tableHtml(P.tete, [...P.lignes, P.lignePafi, P.tot], { num: 3, sur })}
+      ${P.groupes.length === 1 ? `<dl class="f entete"><dt>ZAP :</dt><dd>${esc(P.zap)}</dd><dt>PAPS :</dt><dd>${esc(P.paps) || "<span class='vide'>à renseigner dans la table « ZAP et PAPS »</span>"}</dd></dl>`
+        : `<p class="vide">${P.groupes.length} ZAP. Pour obtenir le tableau officiel d'une ZAP, avec son en-tête ZAP / PAPS, choisissez-la dans la liste des territoires.</p>`}
+      ${tablePrevention(P, sur)}
       <p class="vide">Un même jeune peut avoir plusieurs profils et plusieurs motifs : les colonnes ne s'additionnent pas.</p></div>`;
   }
   return `<div class="bar">${chip("synthese", "Synthèse trimestrielle")}${chip("action", "Tableaux par action")}${chip("prevention", "Prévention – profils")}
@@ -262,7 +290,9 @@ function exporterRapport() {
   } else {
     const P = preventionDonnees();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([...entete, ["ZAP :", P.zap], ["PAPS :", P.paps], [], ["", "", "", "PRÉVENTION"],
-      ["", "", "", "INDIV", "PROFILS", ...Array(P.nbProfils - 1).fill(""), "MOTIFS"], P.tete, ...P.lignes, P.lignePafi, P.tot]), "PRÉVENTION");
+      ["", "", "", "INDIV", "PROFILS", ...Array(P.nbProfils - 1).fill(""), "MOTIFS"], P.tete,
+      ...(P.groupes.length === 1 ? P.groupes[0].lignes : P.groupes.flatMap(g => [["ZAP " + g.zap + (g.paps ? " · " + g.paps : "")], ...g.lignes, g.sousTotal])),
+      ...(P.horsEtab ? [P.lignes[P.lignes.length - 1]] : []), P.lignePafi, P.tot]), "PRÉVENTION");
     nom = "prevention-profils";
   }
   XLSX.writeFile(wb, `${nom}-${lib.replace(/[^\w-]+/g, "-")}.xlsx`);
