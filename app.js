@@ -13,12 +13,12 @@ let ORIGINE = null;           // écran d'où l'on vient quand on ouvre la fiche
 /* ---------- navigation : chaque écran est une étape de l'historique (bouton Retour du navigateur) ---------- */
 function etat() {
   return { VUE, CHEMIN: CHEMIN.map(c => ({ ...c })), FILTRE_J, RECH, FAMILLE, JEUNE_OUVERT, ORIGINE,
-    R: typeof R_TYPE !== "undefined" ? { R_TYPE, R_ANNEE, R_TRIM, R_TERR, R_ACTION, R_ETAB } : null };
+    R: typeof R_TYPE !== "undefined" ? { R_TYPE, R_ANNEE, R_TRIM, R_TERR, R_ACTION, R_ETAB, R_COMPTAGE, R_COMPARER } : null };
 }
 function appliquer(e) {
   if (!e) return;
   ({ VUE, FILTRE_J, RECH, FAMILLE, JEUNE_OUVERT, ORIGINE } = e); CHEMIN = (e.CHEMIN || []).map(c => ({ ...c }));
-  if (e.R) ({ R_TYPE, R_ANNEE, R_TRIM, R_TERR, R_ACTION, R_ETAB } = e.R);
+  if (e.R) ({ R_TYPE, R_ANNEE, R_TRIM, R_TERR, R_ACTION, R_ETAB, R_COMPTAGE = "presents", R_COMPARER = false } = e.R);
 }
 function naviguer(changer) {
   changer();
@@ -609,10 +609,11 @@ function brancher() {
   const vue = document.getElementById("vue");
   vue.addEventListener("click", e => {
     if (e.target.closest("#r-export")) { exporterRapport(); return; }
-    const el = e.target.closest("[data-rdetail],[data-retour-origine],[data-effacer],[data-rtype],[data-inscrire],[data-clore-parcours],[data-go],[data-niv],[data-alerte],[data-jeune],[data-toggle-etab],[data-toggle-jeune],[data-ajout-jeune],[data-clore],[data-fj],[data-sem],[data-act],.day");
+    const el = e.target.closest("[data-rcomptage],[data-rdetail],[data-retour-origine],[data-effacer],[data-rtype],[data-inscrire],[data-clore-parcours],[data-go],[data-niv],[data-alerte],[data-jeune],[data-toggle-etab],[data-toggle-jeune],[data-ajout-jeune],[data-clore],[data-fj],[data-sem],[data-act],.day");
     if (!el) return;
     if (el.dataset.rtype) { naviguer(() => { R_TYPE = el.dataset.rtype; }); return; }
     if (el.dataset.rdetail !== undefined) { R_DETAIL = el.dataset.rdetail === "1"; rendre(); return; }
+    if (el.dataset.rcomptage) { R_COMPTAGE = el.dataset.rcomptage; rendre(); return; }
     if (el.dataset.inscrire) { ouvrirInscription(Number(el.dataset.inscrire)); return; }
     if (el.dataset.cloreParcours) { ouvrirCloreParcours(el.dataset.cloreParcours); return; }
     if (el.dataset.go !== undefined) { naviguer(() => { CHEMIN = CHEMIN.slice(0, Number(el.dataset.go)); }); }
@@ -640,6 +641,7 @@ function brancher() {
     const r = { "r-annee": v => R_ANNEE = Number(v), "r-trim": v => R_TRIM = v, "r-terr": v => R_TERR = v, "r-action": v => { R_ACTION = v; R_ETAB = ""; }, "r-etab": v => R_ETAB = v }[e.target.id];
     if (r) { r(e.target.value); rendre(); }
     if (e.target.id === "r-vides") { R_VIDES = e.target.checked; rendre(); }
+    if (e.target.id === "r-comparer") { R_COMPARER = e.target.checked; rendre(); }
   });
 }
 function allerJeune(id) {

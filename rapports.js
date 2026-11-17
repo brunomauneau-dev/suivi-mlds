@@ -5,7 +5,14 @@
    Dépend de app.js (D, esc, fmt, liste, toast, aujourdhui, anneeScolaire). */
 
 let R_TYPE = "synthese", R_ANNEE = null, R_TRIM = "T1", R_TERR = "", R_ACTION = "", R_ETAB = "";
-let R_DETAIL = false, R_VIDES = true;   // tableau des devenirs : détail F/G/T ; masquer les classes sans jeune (à l'écran)
+let R_DETAIL = false, R_VIDES = true;
+// règle de comptage des jeunes sur la période (à arrêter avec le commanditaire)
+let R_COMPTAGE = "presents", R_COMPARER = false;
+const COMPTAGES = {
+  presents: ["Présents pendant la période", "jeunes présents dans l'action pendant la période (entrés avant sa fin et non sortis avant son début)"],
+  entrees: ["Entrés pendant la période", "jeunes entrés dans l'action pendant la période"],
+  cumul: ["Cumul depuis le 1er septembre", "jeunes présents dans l'action à un moment entre le 1er septembre et la fin de la période"],
+};   // tableau des devenirs : détail F/G/T ; masquer les classes sans jeune (à l'écran)
 const COURT_DEVENIR = ["Reprise statut scolaire", "Reprise apprentissage", "Reprise stagiaire form. pro", "Structure de retour à l'école",
   "Service civique", "Emploi", "Dispositif hors EN (PSAD)", "Poursuite action MLDS", "En recherche / attente", "Abandon / injoignable"];
 // en-têtes courts du tableau PRÉVENTION (comme dans le modèle)
@@ -76,9 +83,26 @@ function etabDansTerritoire(e) {
   const [niv, id] = R_TERR.split(":"), dep = D.dep.get(e.Departement) || {};
   return niv === "aca" ? dep.Academie === Number(id) : niv === "zap" ? e.Bassin === Number(id) : e.Departement === Number(id);
 }
-function parcoursPeriode(filtreDisp) {
-  const [deb, fin] = bornesRapport();
-  return D.parcours.filter(p => p.jeune && p.Date_entree && p.Date_entree <= fin && (!p.Date_sortie || p.Date_sortie >= deb) && dansTerritoire(p) && (!filtreDisp || filtreDisp(p.disp)));
+function parcoursPeriode(filtreDisp, regle = R_COMPTAGE) {
+  const [deb, fin, , y] = bornesRapport();
+  const debut = regle === "cumul" ? Date.UTC(y, 8, 1) / 1000 : deb;
+  const garde = regle === "entrees" ? p => p.Date_entree >= deb && p.Date_entree <= fin
+    : p => p.Date_entree <= fin && (!p.Date_sortie || p.Date_sortie >= debut);
+  return D.parcours.filter(p => p.jeune && p.Date_entree && garde(p) && dansTerritoire(p) && (!filtreDisp || filtreDisp(p.disp)));
+}
+// comparaison des trois règles sur les tableaux 1 et 2 de la synthèse
+function comparaisonComptages() {
+  const regles = Object.keys(COMPTAGES);
+  const parRegle = regles.map(r => parcoursPeriode(d => d.Ligne_synthese, r));
+  const lignes = [...new Set([...D.dispositifs.values()].map(d => d.Ligne_synthese).filter(Boolean))];
+  const L1 = ["PAPS temps plein", "Parcours modulaires - PAFI (pôles)", "PAFI suivis par la coordination", "Suivis GPDS", "Entretiens de prévention", "Candidatures PAPS", "Actions FSE"]
+    .filter(l => lignes.includes(l));
+  const sexe = (arr, s) => arr.filter(p => p.jeune.Sexe === s).length;
+  const rows = L1.map(l => [l, ...parRegle.map(ps => ps.filter(p => p.disp.Ligne_synthese === l).length)]);
+  rows.push(["Total", ...parRegle.map(ps => ps.length)]);
+  rows.push(["dont filles", ...parRegle.map(ps => sexe(ps, "F"))]);
+  rows.push(["dont garçons", ...parRegle.map(ps => ps.length - sexe(ps, "F"))]);
+  return { tete: ["Action", ...regles.map(r => COMPTAGES[r][0])], rows, regles };
 }
 function nomTerr() {
   if (!R_TERR) return "Région académique Nouvelle-Aquitaine";
@@ -233,8 +257,14 @@ function vueRapports() {
   const chip = (k, l) => `<button class="chip ${R_TYPE === k ? "on" : ""}" data-rtype="${k}">${l}</button>`;
   let corps = "";
   if (R_TYPE === "synthese") {
-    corps = syntheseTableaux().map(t => `<div class="card"><h2>${esc(t.titre)}</h2>${tableHtml(t.tete, t.lignes)}</div>`).join("") +
-      `<p class="vide">Comptage : jeunes présents dans l'action pendant la période (entrés avant la fin de la période et non sortis avant son début).</p>`;
+    const C = comparaisonComptages();
+    const choix = `<div class="card comptage"><h2>Règle de comptage<small>à arrêter avec le commanditaire</small></h2>
+      <div class="bar">${Object.entries(COMPTAGES).map(([k, [l]]) => `<button class="chip ${R_COMPTAGE === k ? "on" : ""}" data-rcomptage="${k}">${esc(l)}</button>`).join("")}
+        <label class="vide"><input type="checkbox" id="r-comparer" ${R_COMPARER ? "checked" : ""}> Comparer les trois règles</label></div>
+      <p class="vide" style="margin:8px 0 0">Tableaux ci-dessous : ${esc(COMPTAGES[R_COMPTAGE][1])}.</p>
+      ${R_COMPARER ? `<div style="margin-top:12px">${tableHtml(C.tete, C.rows.map(r => r[0] === "Total" ? [...r, true] : r))}</div>
+        <p class="vide">Les écarts viennent des jeunes entrés avant la période (comptés en « présents », pas en « entrés ») et de ceux sortis avant la période (comptés seulement en « cumul »).</p>` : ""}</div>`;
+    corps = choix + syntheseTableaux().map(t => `<div class="card"><h2>${esc(t.titre)}</h2>${tableHtml(t.tete, t.lignes)}</div>`).join("");
   } else if (R_TYPE === "action") {
     const A = actionDonnees();
     const enTete = `<dl class="f entete">${A.entete.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v) || "&nbsp;"}</dd>`).join("")}</dl>`;
@@ -265,18 +295,19 @@ function vueRapports() {
       <select id="r-trim">${[["T1", "Trimestre 1"], ["T2", "Trimestre 2"], ["T3", "Trimestre 3"], ["A", "Année complète"]].map(([k, l]) => opt(k, l, R_TRIM)).join("")}</select>
       <select id="r-terr">${terr}</select>
       <button class="btn" id="r-export">⤓ Exporter ce rapport (Excel)</button></div>
-    <div class="crumb"><b>${esc(nomTerr())}</b><span class="sep">·</span><span style="color:var(--muted)">${esc(lib)}</span></div>
+    <div class="crumb"><b>${esc(nomTerr())}</b><span class="sep">·</span><span style="color:var(--muted)">${esc(lib)}</span><span class="sep">·</span><span style="color:var(--muted)">${esc(COMPTAGES[R_COMPTAGE][0])}</span></div>
     ${corps}`;
 }
 
 function exporterRapport() {
   if (!window.XLSX) { toast("Export indisponible"); return; }
-  const wb = XLSX.utils.book_new(), [, , lib] = bornesRapport(), entete = [[nomTerr()], [lib], []];
+  const wb = XLSX.utils.book_new(), [, , lib] = bornesRapport(), entete = [[nomTerr()], [lib], ["Règle de comptage : " + COMPTAGES[R_COMPTAGE][1]], []];
   const propre = l => l.filter(x => x !== true);
   let nom;
   if (R_TYPE === "synthese") {
     const aoa = [...entete];
     syntheseTableaux().forEach(t => { aoa.push([t.titre], t.tete, ...t.lignes.map(propre), []); });
+    if (R_COMPARER) { const C = comparaisonComptages(); aoa.push(["Comparaison des règles de comptage"], C.tete, ...C.rows); }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), "Synthèse"); nom = "synthese-trimestrielle";
   } else if (R_TYPE === "action") {
     const A = actionDonnees();
